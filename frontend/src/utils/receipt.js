@@ -18,6 +18,7 @@ export function buildThermalReceiptHtml({
   footer = "",
   widthMm = 80,
   invoiceNo = "—",
+  queueNo = "",
   dateStr = "",
   lines = [],
   subtotal = 0,
@@ -74,12 +75,15 @@ export function buildThermalReceiptHtml({
   .small{font-size:10px;}
   .muted{color:#555;}
   .tot{font-weight:700;font-size:12px;margin-top:8px;padding-top:6px;border-top:1px solid #000;}
+  .queue-box{border:1px solid #000;padding:4px;margin:4px 0;text-align:center;}
+  .queue-num{font-weight:900;font-size:16px;}
   hr{border:none;border-top:1px dashed #999;margin:6px 0;}
 </style></head><body><div class="wrap">
 <div class="c h">${esc(storeName)}</div>
 ${storeAddress ? `<div class="c small">${esc(storeAddress)}</div>` : ""}
 ${storePhone ? `<div class="c small">${esc(storePhone)}</div>` : ""}
 <hr/>
+${queueNo ? `<div class="queue-box"><div class="small">NO. ANTRIAN</div><div class="queue-num">${esc(queueNo)}</div></div><hr/>` : ""}
 <div class="row small"><span>${esc(invoiceNo)}</span><span>${esc(dateStr)}</span></div>
 <hr/>
 ${lineRows}
@@ -97,6 +101,7 @@ ${footer ? `<hr/><div class="c small">${esc(footer)}</div>` : ""}
 export function buildReceiptWhatsAppText({
   storeName,
   invoiceNo,
+  queueNo,
   dateStr,
   lines,
   subtotal,
@@ -109,7 +114,9 @@ export function buildReceiptWhatsAppText({
   changeAmount,
   payments,
 }) {
-  const hdr = `${storeName}\n${invoiceNo} · ${dateStr}\n---\n`;
+  let hdr = `${storeName}\n`;
+  if (queueNo) hdr += `*NO. ANTRIAN: ${queueNo}*\n`;
+  hdr += `${invoiceNo} · ${dateStr}\n---\n`;
   const items = lines
     .map((c) => {
       const d = Number(c.discount_amount || 0);
@@ -140,6 +147,7 @@ export function buildReceiptPlainText({
   storePhone = "",
   footer = "",
   invoiceNo = "—",
+  queueNo = "",
   dateStr = "",
   lines = [],
   subtotal = 0,
@@ -173,6 +181,10 @@ export function buildReceiptPlainText({
   if (storeAddress) txt += centerText(storeAddress) + "\n";
   if (storePhone) txt += centerText(storePhone) + "\n";
   txt += lineStr + "\n";
+  if (queueNo) {
+    txt += centerText(`ANTRIAN: ${queueNo}`) + "\n";
+    txt += lineStr + "\n";
+  }
   txt += padRightLeft(invoiceNo, dateStr) + "\n";
   txt += lineStr + "\n";
 
@@ -223,6 +235,7 @@ export function buildEscPosReceiptBinary({
   storePhone = "",
   footer = "",
   invoiceNo = "—",
+  queueNo = "",
   dateStr = "",
   lines = [],
   subtotal = 0,
@@ -246,7 +259,12 @@ export function buildEscPosReceiptBinary({
 
   if (storeAddress) encoder.line(storeAddress);
   if (storePhone) encoder.line(storePhone);
-  encoder.line(lineStr).align("left").line(`${invoiceNo}  ${dateStr}`).line(lineStr);
+  encoder.line(lineStr);
+  if (queueNo) {
+    encoder.align("center").bold(true).size("large").line(`ANTRIAN ${queueNo}`).size("normal").bold(false);
+    encoder.line(lineStr);
+  }
+  encoder.align("left").line(`${invoiceNo}  ${dateStr}`).line(lineStr);
 
   for (const c of lines) {
     const rawDisc = Number(c.discount_amount || 0);

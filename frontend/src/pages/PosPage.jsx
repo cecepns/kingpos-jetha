@@ -753,6 +753,18 @@ export default function PosPage() {
     }
   }
 
+  function getTxReceiptDateStr(tx) {
+    if (!tx) return new Date().toLocaleString("id-ID");
+    const nowTime = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    if (tx.created_at) {
+      const d = new Date(tx.created_at);
+      const time = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+      const date = tx.sale_date || d.toLocaleDateString("id-ID");
+      return `${date} · ${time}`;
+    }
+    return tx.sale_date ? `${tx.sale_date} · ${nowTime}` : new Date().toLocaleString("id-ID");
+  }
+
   async function printCompletedBluetoothReceipt(tx) {
     if (!tx) return;
     const binary = buildEscPosReceiptBinary({
@@ -761,7 +773,8 @@ export default function PosPage() {
       storePhone: receiptCfg.store_phone,
       footer: receiptCfg.receipt_footer,
       invoiceNo: tx.invoice_no,
-      dateStr: tx.sale_date || new Date().toLocaleDateString("id-ID"),
+      queueNo: tx.queue_no,
+      dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
       discountTotal: tx.discountTotal || 0,
@@ -792,7 +805,8 @@ export default function PosPage() {
       storePhone: receiptCfg.store_phone,
       footer: receiptCfg.receipt_footer,
       invoiceNo: tx.invoice_no,
-      dateStr: tx.sale_date || new Date().toLocaleDateString("id-ID"),
+      queueNo: tx.queue_no,
+      dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
       discountTotal: tx.discountTotal || 0,
@@ -819,7 +833,8 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       widthMm: Number(receiptCfg.thermal_width_mm) || 80,
       invoiceNo: tx.invoice_no,
-      dateStr: tx.sale_date || new Date().toLocaleDateString("id-ID"),
+      queueNo: tx.queue_no,
+      dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
       discountTotal: tx.discountTotal || 0,
@@ -855,7 +870,7 @@ export default function PosPage() {
 <div class="store">${receiptCfg.store_name || "Toko"}</div>
 <div class="lbl">NOMOR ANTRIAN</div>
 <div class="num">${queueNo}</div>
-<div class="inv">${tx.invoice_no} · ${tx.sale_date}</div>
+<div class="inv">${tx.invoice_no} · ${getTxReceiptDateStr(tx)}</div>
 <div class="ftr">Silakan simpan nomor ini.<br/>Terima kasih atas kunjungan Anda!</div>
 </div><script>window.onload=function(){window.print();}<\/script></body></html>`;
     w.document.write(html);
@@ -874,7 +889,8 @@ export default function PosPage() {
       buildReceiptWhatsAppText({
         storeName: receiptCfg.store_name,
         invoiceNo: tx.invoice_no,
-        dateStr: tx.sale_date,
+        queueNo: tx.queue_no,
+        dateStr: getTxReceiptDateStr(tx),
         lines: tx.lines || [],
         subtotal: tx.subtotal || 0,
         discountTotal: tx.discountTotal || 0,
