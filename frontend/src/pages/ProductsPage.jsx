@@ -569,8 +569,8 @@ export default function ProductsPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500 dark:border-slate-800">
-        <span>{total} produk</span>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-t border-slate-100 pt-3 text-xs sm:text-sm text-slate-500 dark:border-slate-800">
+        <span className="text-center sm:text-left">{total} produk</span>
         <PaginationBar page={page} pages={pages} setPage={setPage} />
       </div>
 

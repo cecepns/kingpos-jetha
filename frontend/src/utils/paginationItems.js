@@ -8,7 +8,7 @@ export function getPageNumberItems(page, pages) {
   const p = Math.max(1, Math.floor(Number(pages) || 1));
   const cur = Math.min(Math.max(1, Math.floor(Number(page) || 1)), p);
   if (p <= 1) return [];
-  if (p <= 9) {
+  if (p <= 7) {
     return Array.from({ length: p }, (_, i) => ({ type: "page", value: i + 1 }));
   }
   const items = [];
@@ -17,7 +17,7 @@ export function getPageNumberItems(page, pages) {
     if (items.length && items[items.length - 1].type === "ellipsis") return;
     items.push({ type: "ellipsis", key: `e-${items.length}` });
   };
-  const windowRadius = 2;
+  const windowRadius = 1;
   pushPage(1);
   const start = Math.max(2, cur - windowRadius);
   const end = Math.min(p - 1, cur + windowRadius);

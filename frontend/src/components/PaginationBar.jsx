@@ -15,16 +15,16 @@ export function PaginationBar({ page, pages, setPage, variant = "default", class
   const compact = variant === "compact";
 
   const btnNav = compact
-    ? "inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-    : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800";
+    ? "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+    : "inline-flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg sm:rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800";
 
   const btnNum = compact
-    ? "inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded-lg px-2 text-xs font-semibold tabular-nums transition-colors"
-    : "inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-xl px-3 text-sm font-semibold tabular-nums transition-colors";
+    ? "inline-flex h-7 min-w-[1.75rem] shrink-0 items-center justify-center rounded-lg px-2 text-xs font-semibold tabular-nums transition-colors"
+    : "inline-flex h-8 sm:h-9 min-w-[2rem] sm:min-w-[2.25rem] shrink-0 items-center justify-center rounded-lg sm:rounded-xl px-2.5 sm:px-3 text-xs sm:text-sm font-semibold tabular-nums transition-colors";
 
   if (safePages <= 1) {
     return (
-      <div className={clsx("flex items-center gap-1.5", className)}>
+      <div className={clsx("flex flex-nowrap items-center justify-center gap-1 sm:gap-1.5 max-w-full overflow-x-auto py-0.5 no-scrollbar", className)}>
         <button type="button" disabled className={btnNav}>
           <ChevronLeft className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
         </button>
@@ -45,7 +45,7 @@ export function PaginationBar({ page, pages, setPage, variant = "default", class
   }
 
   return (
-    <div className={clsx("flex flex-wrap items-center gap-1.5", className)}>
+    <div className={clsx("flex flex-nowrap items-center justify-center gap-1 sm:gap-1.5 max-w-full overflow-x-auto py-0.5 no-scrollbar", className)}>
       <button
         type="button"
         disabled={safePage <= 1}
@@ -61,8 +61,8 @@ export function PaginationBar({ page, pages, setPage, variant = "default", class
           <span
             key={item.key ?? `ellipsis-${idx}`}
             className={clsx(
-              "flex items-center justify-center px-1 text-slate-400 select-none",
-              compact ? "h-7 text-xs" : "h-9 text-sm"
+              "flex shrink-0 items-center justify-center px-1 text-slate-400 select-none",
+              compact ? "h-7 text-xs" : "h-8 sm:h-9 text-xs sm:text-sm"
             )}
           >
             …
