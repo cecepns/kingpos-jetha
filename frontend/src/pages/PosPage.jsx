@@ -527,10 +527,11 @@ export default function PosPage() {
     (async () => {
       try {
         const { data } = await api.get(`/api/transactions/${resumeId}`, { skipToast: true });
-        if (cancelled || !data || !["draft", "hold"].includes(String(data.status))) {
+        if (cancelled || !data || !["draft", "hold", "completed"].includes(String(data.status))) {
           setSearchParams({}, { replace: true });
           return;
         }
+        const isCompleted = String(data.status) === "completed";
         const lines = await Promise.all(
           (data.items || []).map(async (it) => {
             try {
@@ -561,15 +562,27 @@ export default function PosPage() {
         );
         if (cancelled) return;
         setCart(lines);
-        draftResumeIdRef.current = Number(resumeId);
         if (data.customer_id) setCustomerId(String(data.customer_id));
         setNotes(data.notes || "");
         setDiscountTotal(Number(data.discount_total || 0));
         setTaxPercent(Number(data.tax_percent || 0));
         if (data.sale_date) setSaleDate(String(data.sale_date).slice(0, 10));
+
+        if (isCompleted) {
+          // Void completed transaction in DB so stock is restored and replaced by edited order
+          try {
+            await api.delete(`/api/transactions/${resumeId}`, { skipToast: true });
+          } catch {
+            /* ignore if deletion restricted or fails */
+          }
+          toast.success("Data transaksi dimuat ke kasir — silakan lakukan koreksi");
+        } else {
+          draftResumeIdRef.current = Number(resumeId);
+          toast.success("Draft/hold dimuat — silakan bayar");
+          queueMicrotask(() => setPayOpen(true));
+        }
+
         setSearchParams({}, { replace: true });
-        toast.success("Draft/hold dimuat — silakan bayar");
-        queueMicrotask(() => setPayOpen(true));
       } catch {
         setSearchParams({}, { replace: true });
       }

@@ -37,7 +37,7 @@ export default function PriceCheckerPage() {
     if (inputRef.current) inputRef.current.focus();
   };
 
-  const startAutoResetTimer = (seconds = 5) => {
+  const startAutoResetTimer = (seconds = 15) => {
     clearAutoResetTimer();
     setResetCountdown(seconds);
 
@@ -102,17 +102,17 @@ export default function PriceCheckerPage() {
         setData(null);
         setError(`Produk dengan barcode '${query}' tidak ditemukan dalam sistem.`);
         toast.error(`Produk '${query}' tidak ditemukan!`);
-        startAutoResetTimer(5);
+        startAutoResetTimer(15);
       } else {
         setData(res.data);
-        startAutoResetTimer(5);
+        startAutoResetTimer(15);
       }
     } catch (err) {
       setData(null);
       const errMsg = err.response?.data?.error || `Produk dengan barcode '${query}' tidak ditemukan dalam sistem`;
       setError(errMsg);
       toast.error(errMsg);
-      startAutoResetTimer(5);
+      startAutoResetTimer(15);
     } finally {
       setLoading(false);
     }

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Printer, Save } from "lucide-react";
+import { Bluetooth, Printer, Save } from "lucide-react";
 import Select from "react-select";
 import JsBarcode from "jsbarcode";
+import EscPosEncoder from "esc-pos-encoder";
 import api from "../api/client";
 import { fetchAllPages } from "../api/fetchAllPages";
 import { formatIDR } from "../utils/format";
+import { printViaWebBluetooth, printViaRawBTBase64 } from "../utils/receipt";
 
 const STORAGE_KEY = "barcode_label_settings_v1";
 
@@ -158,6 +160,47 @@ export default function BarcodeLabelsPage() {
     w.document.close();
   }
 
+  async function printBluetoothLabel() {
+    const p = selected?.product;
+    if (!p) return toast.error("Pilih barang");
+    const code = p.barcode || p.sku;
+    if (!code) return toast.error("Produk tanpa barcode/SKU");
+    const nParsed = Number.parseInt(String(copies).trim(), 10);
+    const n = Math.min(100, Math.max(1, Number.isFinite(nParsed) ? nParsed : 1));
+    const top = labelLine(settings.top, p);
+    const bottom = labelLine(settings.bottom, p);
+
+    const t = toast.loading("Mencetak label ke Bluetooth...");
+    try {
+      const encoder = new EscPosEncoder();
+      encoder.initialize().codepage("cp437");
+
+      for (let i = 0; i < n; i++) {
+        encoder.align("center");
+        if (top) encoder.bold(true).line(top).bold(false);
+        encoder.barcode(String(code), "code128", 50);
+        if (bottom) encoder.line(bottom);
+        encoder.newline();
+      }
+      encoder.cut();
+      const binaryData = encoder.encode();
+
+      try {
+        await printViaWebBluetooth(binaryData);
+        toast.success("Label berhasil dicetak ke Bluetooth", { id: t });
+      } catch (err) {
+        try {
+          printViaRawBTBase64(binaryData);
+          toast.success("Membuka RawBT untuk cetak", { id: t });
+        } catch {
+          toast.error(err.message || "Gagal mencetak ke Bluetooth", { id: t });
+        }
+      }
+    } catch (e) {
+      toast.error(e.message || "Gagal membuat format barcode Bluetooth", { id: t });
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
@@ -212,13 +255,22 @@ export default function BarcodeLabelsPage() {
                 }}
               />
             </div>
-            <button
-              type="button"
-              onClick={printSheet}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 font-semibold text-white"
-            >
-              <Printer className="h-5 w-5" /> Print
-            </button>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 pt-2">
+              <button
+                type="button"
+                onClick={printSheet}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 py-3 font-semibold text-white hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600"
+              >
+                <Printer className="h-5 w-5" /> Print Biasa
+              </button>
+              <button
+                type="button"
+                onClick={printBluetoothLabel}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-3 font-semibold text-white hover:bg-brand-500"
+              >
+                <Bluetooth className="h-5 w-5" /> Cetak via Bluetooth
+              </button>
+            </div>
           </div>
         </div>
 

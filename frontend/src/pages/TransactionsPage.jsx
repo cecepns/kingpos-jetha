@@ -268,19 +268,11 @@ export default function TransactionsPage() {
     if (tx.status === "completed") {
       const confirmed = window.confirm(
         `Koreksi/Edit Transaksi ${tx.invoice_no}:\n\n` +
-        `Transaksi selesai ini akan dibatalkan/dihapus terlebih dahulu dan keranjang barang akan dimuat ulang ke kasir POS agar Anda dapat mengedit item, harga, atau jumlah.\n\n` +
+        `Transaksi ini akan dimuat kembali ke kasir POS agar Anda dapat mengedit item, harga, atau jumlah.\n\n` +
         `Apakah Anda yakin ingin melanjutkan?`
       );
       if (!confirmed) return;
-      const t = toast.loading("Memproses edit transaksi...");
-      try {
-        await api.delete(`/api/transactions/${tx.id}`, { skipToast: true });
-        toast.dismiss(t);
-        navigate(`/app/pos?resume=${tx.id}`);
-      } catch (err) {
-        toast.dismiss(t);
-        toast.error(err.response?.data?.error || "Gagal memproses edit transaksi");
-      }
+      navigate(`/app/pos?resume=${tx.id}`);
     } else {
       navigate(`/app/pos?resume=${tx.id}`);
     }
