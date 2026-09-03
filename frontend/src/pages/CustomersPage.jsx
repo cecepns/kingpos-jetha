@@ -141,10 +141,11 @@ export default function CustomersPage() {
 
   // Generate barcode SVG for print member card
   useEffect(() => {
-    if (printMember && printMember.member_barcode) {
+    if (printMember) {
+      const code = printMember.member_barcode || `MBR-${printMember.id}`;
       setTimeout(() => {
         try {
-          JsBarcode("#member-barcode-svg", printMember.member_barcode, {
+          JsBarcode("#member-barcode-svg", code, {
             format: "CODE128",
             width: 2,
             height: 60,
@@ -160,7 +161,150 @@ export default function CustomersPage() {
   }, [printMember]);
 
   function handlePrintMemberCard() {
-    window.print();
+    if (!printMember) return;
+    const code = printMember.member_barcode || `MBR-${printMember.id}`;
+    const svgEl = document.getElementById("member-barcode-svg");
+    const svgHtml = svgEl ? svgEl.outerHTML : "";
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Kartu Member - ${printMember.name || "Pelanggan"}</title>
+  <style>
+    @page {
+      margin: 0;
+      size: auto;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #ffffff;
+      color: #0f172a;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      padding: 24px;
+    }
+    .card {
+      width: 320px;
+      border: 2px dashed #94a3b8;
+      border-radius: 16px;
+      padding: 24px 20px;
+      text-align: center;
+      background: #ffffff;
+      page-break-inside: avoid;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: #059669;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .name {
+      font-size: 20px;
+      font-weight: 900;
+      color: #0f172a;
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+    .phone {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .barcode-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 10px 0;
+      padding: 4px;
+      background: #ffffff;
+    }
+    .barcode-wrap svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .points {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .points strong {
+      color: #d97706;
+      font-weight: 800;
+    }
+    .footer-note {
+      margin-top: 14px;
+      font-size: 10px;
+      color: #94a3b8;
+      border-top: 1px dashed #e2e8f0;
+      padding-top: 8px;
+    }
+    @media print {
+      body {
+        min-height: auto;
+        padding: 10mm;
+      }
+      .card {
+        border: 2px dashed #64748b;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">KARTU MEMBER PELANGGAN</div>
+    <div class="name">${printMember.name || "Pelanggan"}</div>
+    <div class="phone">${printMember.whatsapp ? "WA: " + printMember.whatsapp : "-"}</div>
+    <div class="barcode-wrap">
+      ${svgHtml}
+    </div>
+    <div class="points">Point Terkumpul: <strong>${printMember.total_points || 0} pts</strong></div>
+    <div class="footer-note">Scan barcode ini saat bertransaksi di kasir</div>
+  </div>
+</body>
+</html>`;
+
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch {
+        /* ignore */
+      } finally {
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 1500);
+      }
+    }, 250);
   }
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
