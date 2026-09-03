@@ -235,16 +235,6 @@ export default function CustomersPage() {
       max-width: 100%;
       height: auto;
     }
-    .points {
-      margin-top: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #64748b;
-    }
-    .points strong {
-      color: #d97706;
-      font-weight: 800;
-    }
     .footer-note {
       margin-top: 14px;
       font-size: 10px;
@@ -271,7 +261,6 @@ export default function CustomersPage() {
     <div class="barcode-wrap">
       ${svgHtml}
     </div>
-    <div class="points">Point Terkumpul: <strong>${printMember.total_points || 0} pts</strong></div>
     <div class="footer-note">Scan barcode ini saat bertransaksi di kasir</div>
   </div>
 </body>
@@ -663,8 +652,8 @@ export default function CustomersPage() {
                 <svg id="member-barcode-svg"></svg>
               </div>
 
-              <div className="text-[11px] font-semibold text-slate-400">
-                Point Terkumpul: <strong className="text-amber-600">{printMember.total_points || 0} pts</strong>
+              <div className="text-[11px] font-semibold text-slate-400 border-t border-dashed border-slate-200 dark:border-slate-800 pt-2">
+                Scan barcode ini saat bertransaksi di kasir
               </div>
             </div>
 
