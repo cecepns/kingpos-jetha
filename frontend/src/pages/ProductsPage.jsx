@@ -101,6 +101,7 @@ export default function ProductsPage() {
       image_path: "",
       tiers: [],
       variants: [],
+      unit_conversions: [],
     },
   });
 
@@ -112,6 +113,11 @@ export default function ProductsPage() {
   const { fields: variantFields, append: appendVariant, remove: removeVariant } = useFieldArray({
     control: form.control,
     name: "variants",
+  });
+
+  const { fields: unitFields, append: appendUnit, remove: removeUnit } = useFieldArray({
+    control: form.control,
+    name: "unit_conversions",
   });
 
   const categoryOptions = useMemo(
@@ -255,6 +261,7 @@ export default function ProductsPage() {
       category_ids: [],
       variants: [],
       tiers: [],
+      unit_conversions: [],
       is_active: true,
       image_path: "",
     });
@@ -269,6 +276,7 @@ export default function ProductsPage() {
         wholesale_min_qty: data.wholesale_min_qty || 0,
         variants: data.variants || [],
         tiers: data.tiers || [],
+        unit_conversions: data.unit_conversions || [],
         unit: data.unit || "PCS",
         location: data.location || "",
         brand: data.brand || "",
@@ -292,6 +300,7 @@ export default function ProductsPage() {
         wholesale_min_qty: data.wholesale_min_qty || 0,
         variants: (data.variants || []).map((v) => ({ ...v, id: "", sku: "", barcode: "" })),
         tiers: (data.tiers || []).map((t) => ({ ...t, id: "" })),
+        unit_conversions: (data.unit_conversions || []).map((u) => ({ ...u, id: "" })),
         unit: data.unit || "PCS",
         location: data.location || "",
         brand: data.brand || "",
@@ -323,6 +332,12 @@ export default function ProductsPage() {
         min_qty: Number(t.min_qty || 0),
         price: Number(t.price || 0)
       })),
+      unit_conversions: (values.unit_conversions || []).map(u => ({
+        ...u,
+        unit_name: String(u.unit_name || "").trim(),
+        conversion_qty: Number(u.conversion_qty || 1),
+        sell_price: Number(u.sell_price || 0),
+      })).filter(u => u.unit_name),
       min_stock: Number(values.min_stock),
       unit: values.unit || "PCS",
       location: values.location || null,
@@ -821,6 +836,79 @@ export default function ProductsPage() {
               </div>
             )}
           </div>
+
+          {/* Konversi Satuan Lain (Multi-Unit) */}
+          <div className="md:col-span-2 rounded-2xl border border-blue-200 bg-blue-50/40 p-3.5 sm:p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">Pilihan Satuan Lain / Konversi (Multi-Unit)</h4>
+                <p className="text-xs text-slate-500">
+                  Bisa dipilih/diganti langsung saat transaksi di kasir POS. Misal: 1 Karton = 40 {form.watch("unit") || "PCS"}, 1 Lusin = 12 {form.watch("unit") || "PCS"}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => appendUnit({ unit_name: "", conversion_qty: 1, sell_price: form.watch("sell_price") || 0 })}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 sm:py-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" /> Tambah Satuan Lain
+              </button>
+            </div>
+
+            {unitFields.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">Belum ada pilihan satuan lain. Hanya menggunakan satuan dasar ({form.watch("unit") || "PCS"}).</p>
+            ) : (
+              <div className="space-y-3">
+                {unitFields.map((u, idx) => (
+                  <div key={u.id || idx} className="rounded-xl border border-blue-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="grid gap-2.5 sm:grid-cols-7 sm:items-end">
+                      <div className="sm:col-span-3">
+                        <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Nama Satuan</label>
+                        <input
+                          type="text"
+                          placeholder="Mis. Karton / Lusin / Pack / 1 Kg"
+                          className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs font-bold dark:border-slate-700 dark:bg-slate-900"
+                          {...form.register(`unit_conversions.${idx}.unit_name`)}
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          Isi (Jumlah {form.watch("unit") || "PCS"})
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Mis. 40"
+                          className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs font-bold dark:border-slate-700 dark:bg-slate-900"
+                          {...form.register(`unit_conversions.${idx}.conversion_qty`)}
+                        />
+                      </div>
+                      <div className="sm:col-span-2 flex items-end gap-2">
+                        <div className="flex-1">
+                          <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Harga Satuan (Rp)</label>
+                          <input
+                            type="number"
+                            placeholder="Harga Jual Satuan"
+                            className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs font-bold dark:border-slate-700 dark:bg-slate-900"
+                            {...form.register(`unit_conversions.${idx}.sell_price`)}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeUnit(idx)}
+                          className="rounded-lg bg-red-50 p-2 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-400"
+                          title="Hapus Satuan"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="md:col-span-2">
             <label className="text-xs text-slate-500">Deskripsi</label>
             <textarea className="mt-1 w-full rounded-xl border px-3 py-2 dark:border-slate-700 dark:bg-slate-950" rows={3} {...form.register("description")} />

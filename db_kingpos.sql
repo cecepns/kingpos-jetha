@@ -189,6 +189,9 @@ CREATE TABLE `customers` (
   `address` text DEFAULT NULL,
   `category` varchar(64) DEFAULT 'umum',
   `notes` text DEFAULT NULL,
+  `member_barcode` varchar(64) DEFAULT NULL,
+  `total_points` int(11) DEFAULT 0,
+  `total_visits` int(11) DEFAULT 0,
   `total_purchase` decimal(18,2) DEFAULT 0.00,
   `balance_receivable` decimal(18,2) DEFAULT 0.00,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -199,8 +202,28 @@ CREATE TABLE `customers` (
 -- Dumping data untuk tabel `customers`
 --
 
-INSERT INTO `customers` (`id`, `name`, `whatsapp`, `address`, `category`, `notes`, `total_purchase`, `balance_receivable`, `created_at`, `updated_at`) VALUES
-(1, 'Cecep Nandang', '082214094779', 'Subang', 'umum', NULL, 0.00, 0.00, '2026-08-05 08:54:50', '2026-08-05 08:54:50');
+INSERT INTO `customers` (`id`, `name`, `whatsapp`, `address`, `category`, `notes`, `member_barcode`, `total_points`, `total_visits`, `total_purchase`, `balance_receivable`, `created_at`, `updated_at`) VALUES
+(1, 'Cecep Nandang', '082214094779', 'Subang', 'umum', NULL, 'MBR-1', 0, 0, 0.00, 0.00, '2026-08-05 08:54:50', '2026-08-05 08:54:50');
+
+-- --------------------------------------------------------
+
+--
+-- Struktur dari tabel `customer_points_log`
+--
+
+CREATE TABLE `customer_points_log` (
+  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `customer_id` int(10) UNSIGNED NOT NULL,
+  `transaction_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `points` int(11) NOT NULL,
+  `type` enum('earn','manual','redeem','adjustment') NOT NULL DEFAULT 'earn',
+  `notes` varchar(255) DEFAULT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_cpl_customer` (`customer_id`),
+  KEY `idx_cpl_transaction` (`transaction_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -496,6 +519,23 @@ CREATE TABLE `product_tiers` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_pt_product` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Struktur dari tabel `product_unit_conversions`
+--
+
+CREATE TABLE `product_unit_conversions` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `product_id` int(10) UNSIGNED NOT NULL,
+  `unit_name` varchar(32) NOT NULL,
+  `conversion_qty` int(11) NOT NULL DEFAULT 1,
+  `sell_price` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_puc_product` (`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -897,7 +937,7 @@ CREATE TABLE `transactions` (
 CREATE TABLE `transaction_items` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `transaction_id` bigint(20) UNSIGNED NOT NULL,
-  `product_id` int(10) UNSIGNED NOT NULL,
+  `product_id` int(10) UNSIGNED DEFAULT NULL,
   `variant_id` int(10) UNSIGNED DEFAULT NULL,
   `product_name` varchar(255) NOT NULL,
   `variant_name` varchar(128) DEFAULT NULL,
@@ -908,7 +948,8 @@ CREATE TABLE `transaction_items` (
   `discount_amount` decimal(18,2) DEFAULT 0.00,
   `subtotal` decimal(18,2) NOT NULL,
   `line_total` decimal(18,2) NOT NULL,
-  `margin_amount` decimal(18,2) NOT NULL DEFAULT 0.00
+  `margin_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `is_custom` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

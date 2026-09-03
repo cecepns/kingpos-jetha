@@ -24,8 +24,14 @@ import {
   Bluetooth,
   ShoppingBag,
   Smartphone,
+  Award,
+  Package,
+  UserSearch,
+  ArrowRightLeft,
+  Loader2,
 } from "lucide-react";
 import Select from "react-select";
+import AsyncSelect from "react-select/async";
 import JsBarcode from "jsbarcode";
 import { Html5Qrcode } from "html5-qrcode";
 import api from "../api/client";
@@ -61,6 +67,7 @@ export default function PosPage() {
   const [customerSearch, setCustomerSearch] = useState("");
   const custQ = useDebouncedValue(customerSearch, 350);
   const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [productPage, setProductPage] = useState(1);
   const [productTotal, setProductTotal] = useState(0);
   const [inactiveHint, setInactiveHint] = useState(null);
@@ -101,6 +108,12 @@ export default function PosPage() {
   const [customers, setCustomers] = useState([]);
   const [cashAccounts, setCashAccounts] = useState([]);
   const [customerId, setCustomerId] = useState("");
+  const [selectedCustomerOption, setSelectedCustomerOption] = useState(null);
+  const [customItemOpen, setCustomItemOpen] = useState(false);
+  const [customItemName, setCustomItemName] = useState("");
+  const [customItemPrice, setCustomItemPrice] = useState("");
+  const [customItemQty, setCustomItemQty] = useState("1");
+  const [pointSettings, setPointSettings] = useState({ enabled: false, perAmount: 10000 });
   const [discountTotal, setDiscountTotal] = useState(0);
   const [taxPercent, setTaxPercent] = useState(0);
   const [notes, setNotes] = useState("");
@@ -196,27 +209,34 @@ export default function PosPage() {
 
   const fetchProductPage = useCallback(
     async (pageNum, append) => {
-      const { data } = await api.get("/api/products", {
-        params: { q: dq, limit: PRODUCT_PAGE_SIZE, page: pageNum, active: 1 },
-      });
-      const rows = data.data || [];
-      const tot = Number(data.total ?? rows.length);
-      setProductTotal(tot);
-      if (append) setProducts((prev) => [...prev, ...rows]);
-      else setProducts(rows);
+      if (!append) setProductsLoading(true);
+      try {
+        const { data } = await api.get("/api/products", {
+          params: { q: dq, limit: PRODUCT_PAGE_SIZE, page: pageNum, active: 1 },
+        });
+        const rows = data.data || [];
+        const tot = Number(data.total ?? rows.length);
+        setProductTotal(tot);
+        if (append) setProducts((prev) => [...prev, ...rows]);
+        else setProducts(rows);
 
-      if (!append && rows.length === 0 && dq.trim()) {
-        try {
-          const { data: all } = await api.get("/api/products", {
-            params: { q: dq, limit: 1, page: 1 },
-          });
-          const hit = (all.data || [])[0];
-          setInactiveHint(hit && Number(hit.is_active) === 0 ? hit : null);
-        } catch {
+        if (!append && rows.length === 0 && dq.trim()) {
+          try {
+            const { data: all } = await api.get("/api/products", {
+              params: { q: dq, limit: 1, page: 1 },
+            });
+            const hit = (all.data || [])[0];
+            setInactiveHint(hit && Number(hit.is_active) === 0 ? hit : null);
+          } catch {
+            setInactiveHint(null);
+          }
+        } else if (!append) {
           setInactiveHint(null);
         }
-      } else if (!append) {
-        setInactiveHint(null);
+      } catch (err) {
+        if (!append) setProducts([]);
+      } finally {
+        if (!append) setProductsLoading(false);
       }
     },
     [dq]
@@ -250,6 +270,10 @@ export default function PosPage() {
           cash: data.enable_pay_cash !== "0",
           transfer: data.enable_pay_transfer === "1",
           qris: data.enable_pay_qris === "1",
+        });
+        setPointSettings({
+          enabled: data.point_enabled === "1",
+          perAmount: Number(data.point_per_amount) || 10000,
         });
       })
       .catch(() => { });
@@ -320,6 +344,8 @@ export default function PosPage() {
     const itemWholesalePrice = variant ? Number(variant.wholesale_price || 0) : Number(p.wholesale_price || 0);
     const itemMinQty = variant ? Number(variant.wholesale_min_qty || 0) : Number(p.wholesale_min_qty || 0);
     const itemTiers = variant ? (variant.tiers || []) : (p.tiers || []);
+    const itemUnitConversions = p.unit_conversions || [];
+    const itemBaseUnit = p.unit || "PCS";
 
     const exIndex = cart.findIndex((c) => c.item_key === itemKey || (c.product_id === p.id && !variant && !c.variant_id));
     if (exIndex >= 0) {
@@ -360,11 +386,87 @@ export default function PosPage() {
           tiers: itemTiers,
           qty: newQty,
           discount_amount: 0,
+          unit_conversions: itemUnitConversions,
+          base_unit: itemBaseUnit,
+          selected_unit: null, // null = base unit (PCS)
         },
       ]);
     }
     toast.success(`${itemName} ditambahkan`);
   }
+
+  function addCustomItemToCart() {
+    const name = customItemName.trim();
+    const price = Number(String(customItemPrice).replace(/\D/g, "")) || 0;
+    const qty = Number(customItemQty) || 1;
+    if (!name) { toast.error("Nama item wajib diisi"); return; }
+    if (price <= 0) { toast.error("Harga harus lebih dari 0"); return; }
+    const itemKey = `custom_${Date.now()}`;
+    setCart((prev) => [
+      ...prev,
+      {
+        item_key: itemKey,
+        product_id: null,
+        variant_id: null,
+        name,
+        barcode: null,
+        stock: 9999,
+        purchase_price: 0,
+        sell_price: price,
+        retail_price: price,
+        wholesale_price: 0,
+        wholesale_min_qty: 0,
+        tiers: [],
+        qty,
+        discount_amount: 0,
+        is_custom: true,
+        unit_conversions: [],
+        base_unit: "PCS",
+        selected_unit: null,
+      },
+    ]);
+    toast.success(`"${name}" ditambahkan ke keranjang`);
+    setCustomItemName("");
+    setCustomItemPrice("");
+    setCustomItemQty("1");
+    setCustomItemOpen(false);
+  }
+
+  function switchCartUnit(itemKey, unitConversionId) {
+    setCart((prev) =>
+      prev.map((c) => {
+        if ((c.item_key || String(c.product_id)) !== itemKey) return c;
+        if (!unitConversionId) {
+          // Back to base unit
+          const prevUnit = c.selected_unit;
+          if (!prevUnit) return c;
+          const newQty = c.qty * prevUnit.conversion_qty;
+          const newPrice = c.retail_price;
+          return { ...c, qty: newQty, sell_price: newPrice, selected_unit: null, is_custom_price: false };
+        }
+        const conv = (c.unit_conversions || []).find((u) => u.id === unitConversionId);
+        if (!conv) return c;
+        // Convert from current unit to base, then to new unit
+        const currentBaseQty = c.selected_unit ? c.qty * c.selected_unit.conversion_qty : c.qty;
+        const newQty = Math.max(1, Math.floor(currentBaseQty / conv.conversion_qty));
+        return { ...c, qty: newQty, sell_price: Number(conv.sell_price), selected_unit: conv, is_custom_price: false };
+      })
+    );
+  }
+
+  // Customer search for AsyncSelect
+  const loadCustomerOptions = useCallback(async (inputValue) => {
+    try {
+      const { data } = await api.get("/api/customers", { params: { q: inputValue, page: 1, limit: 20 } });
+      return (data.data || []).map((c) => ({
+        value: String(c.id),
+        label: `${c.name}${c.whatsapp ? " (" + c.whatsapp + ")" : ""}`,
+        customer: c,
+      }));
+    } catch {
+      return [];
+    }
+  }, []);
 
   function updateLine(keyOrId, patch) {
     setCart((prevCart) =>
@@ -461,6 +563,7 @@ export default function PosPage() {
   }
 
   function lineQtyCap(c) {
+    if (c.is_custom) return 9999;
     const srv = liveStock(c.product_id, c.stock);
     const otherRes = (reservedByProduct[c.product_id] || 0) - c.qty;
     return Math.max(1, Math.max(0, srv - otherRes));
@@ -687,6 +790,8 @@ export default function PosPage() {
         qty: c.qty,
         sell_price: c.sell_price,
         discount_amount: c.discount_amount || 0,
+        is_custom: c.is_custom || false,
+        name: c.is_custom ? c.name : undefined,
       })),
       payments: pays,
     };
@@ -728,8 +833,9 @@ export default function PosPage() {
           additionalFee,
           additionalFeeName,
           payments: pays,
-          customer: customers.find((c) => String(c.id) === String(customerId)) || null,
+          customer: selectedCustomerOption?.customer || customers.find((c) => String(c.id) === String(customerId)) || null,
           receiptWaPhone,
+          points_earned: data.points_earned || 0,
         });
         setSuccessModalOpen(true);
       }
@@ -746,6 +852,7 @@ export default function PosPage() {
       setProductPage(1);
       if (status === "draft" || status === "hold") {
         setCustomerId("");
+        setSelectedCustomerOption(null);
         setSaleDate(new Date().toISOString().slice(0, 10));
       }
     } catch {
@@ -997,6 +1104,27 @@ export default function PosPage() {
     async (rawCode) => {
       const code = String(rawCode || "").trim();
       if (!code) return false;
+
+      // Detect member barcode (MBR-xxx)
+      if (code.startsWith("MBR-")) {
+        try {
+          const { data } = await api.get(`/api/customers/barcode/${encodeURIComponent(code)}`);
+          if (data && data.id) {
+            setCustomerId(String(data.id));
+            setSelectedCustomerOption({
+              value: String(data.id),
+              label: `${data.name}${data.whatsapp ? " (" + data.whatsapp + ")" : ""}`,
+              customer: data,
+            });
+            if (data.whatsapp) setReceiptWaPhone(String(data.whatsapp).replace(/\D/g, ""));
+            toast.success(`Pelanggan: ${data.name} (${data.total_points || 0} point)`);
+            return true;
+          }
+        } catch {
+          toast.error("Member tidak ditemukan");
+        }
+        return false;
+      }
       let found = products.find((p) => p.barcode === code || p.sku === code);
       if (!found) {
         try {
@@ -1256,55 +1384,71 @@ export default function PosPage() {
                 <strong>{inactiveHint.name}</strong> ditemukan tapi <strong>nonaktif</strong>.
               </div>
             )}
-            <div className="grid gap-2 p-2 sm:grid-cols-2">
-              {products.map((p) => {
-                const left = availableOnGrid(p);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={left <= 0}
-                    onClick={() => addToCart(p)}
-                    className="flex w-full gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-xs transition hover:border-brand-400 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-800 dark:bg-slate-900"
-                  >
-                    <div className="min-w-0 flex-1 flex flex-col">
-                      <span className="line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{p.name}</span>
-                      <span className="mt-1 text-brand-700 font-bold dark:text-brand-300">
-                        {formatIDR(p.sell_price)}
-                        {p.wholesale_price > 0 && p.wholesale_min_qty > 0 ? (
-                          <span className="ml-1.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                            (Grosir min {p.wholesale_min_qty}: {formatIDR(p.wholesale_price)})
+            {productsLoading ? (
+              <div className="flex min-h-[260px] flex-col items-center justify-center gap-2.5 py-12 text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-brand-600 dark:text-brand-400" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Memuat produk...</p>
+              </div>
+            ) : products.length === 0 ? (
+              <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 py-10 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+                  <ShoppingBag className="h-6 w-6" />
+                </div>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {dq.trim() ? "Tidak ada produk yang cocok" : "Belum ada data produk"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-2 p-2 sm:grid-cols-2">
+                {products.map((p) => {
+                  const left = availableOnGrid(p);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={left <= 0}
+                      onClick={() => addToCart(p)}
+                      className="flex w-full gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-xs transition hover:border-brand-400 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <div className="min-w-0 flex-1 flex flex-col">
+                        <span className="line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{p.name}</span>
+                        <span className="mt-1 text-brand-700 font-bold dark:text-brand-300">
+                          {formatIDR(p.sell_price)}
+                          {p.wholesale_price > 0 && p.wholesale_min_qty > 0 ? (
+                            <span className="ml-1.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              (Grosir min {p.wholesale_min_qty}: {formatIDR(p.wholesale_price)})
+                            </span>
+                          ) : null}
+                        </span>
+                        {p.variants && p.variants.length > 0 ? (
+                          <span className="mt-1 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                            {p.variants.length} Varian
                           </span>
                         ) : null}
-                      </span>
-                      {p.variants && p.variants.length > 0 ? (
-                        <span className="mt-1 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
-                          {p.variants.length} Varian
+                        <span className={`text-xs ${left <= 0 ? "text-red-500" : "text-slate-400"}`}>
+                          Tersisa: {left}
+                          {(reservedByProduct[p.id] || 0) > 0 ? (
+                            <span className="text-slate-500"> / gudang {p.stock}</span>
+                          ) : null}
                         </span>
+                      </div>
+                      {p.image_path ? (
+                        <img
+                          src={uploadSrc(p.image_path)}
+                          alt=""
+                          className="h-20 w-20 shrink-0 self-start rounded-xl border border-slate-200 object-cover dark:border-slate-600"
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
                       ) : null}
-                      <span className={`text-xs ${left <= 0 ? "text-red-500" : "text-slate-400"}`}>
-                        Tersisa: {left}
-                        {(reservedByProduct[p.id] || 0) > 0 ? (
-                          <span className="text-slate-500"> / gudang {p.stock}</span>
-                        ) : null}
-                      </span>
-                    </div>
-                    {p.image_path ? (
-                      <img
-                        src={uploadSrc(p.image_path)}
-                        alt=""
-                        className="h-20 w-20 shrink-0 self-start rounded-xl border border-slate-200 object-cover dark:border-slate-600"
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                        }}
-                      />
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           {hasMoreProducts && (
             <button
@@ -1386,7 +1530,10 @@ export default function PosPage() {
                   <div key={itemKey} className="group relative rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-xs transition-all hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900">
                     <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5 dark:border-slate-800/60">
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-sm font-bold text-slate-900 line-clamp-1 dark:text-white">{c.name}</h4>
+                        <h4 className="text-sm font-bold text-slate-900 line-clamp-1 dark:text-white">
+                          {c.is_custom && <Package className="inline h-3.5 w-3.5 mr-1 text-amber-500" />}
+                          {c.name}
+                        </h4>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                           {isWholesaleActive && (
                             <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
@@ -1396,6 +1543,16 @@ export default function PosPage() {
                           {c.is_custom_price && (
                             <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
                               Harga Custom
+                            </span>
+                          )}
+                          {c.is_custom && (
+                            <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                              Item Bebas
+                            </span>
+                          )}
+                          {c.selected_unit && (
+                            <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                              {c.selected_unit.unit_name}
                             </span>
                           )}
                         </div>
@@ -1563,9 +1720,30 @@ export default function PosPage() {
                       </div>
                     )}
 
+                    {/* Unit switching dropdown */}
+                    {!c.is_custom && c.unit_conversions && c.unit_conversions.length > 0 && (
+                      <div className="mt-2 flex items-center gap-2 rounded-xl border border-blue-200/60 bg-blue-50/50 p-2 dark:border-blue-900/40 dark:bg-blue-950/30">
+                        <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <span className="text-[11px] font-semibold text-blue-700 dark:text-blue-300 shrink-0">Satuan:</span>
+                        <select
+                          className="min-w-0 flex-1 rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs font-bold text-slate-900 outline-none dark:border-blue-800 dark:bg-slate-900 dark:text-white"
+                          value={c.selected_unit ? String(c.selected_unit.id) : ""}
+                          onChange={(e) => switchCartUnit(itemKey, e.target.value ? Number(e.target.value) : null)}
+                        >
+                          <option value="">{c.base_unit || "PCS"}</option>
+                          {c.unit_conversions.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.unit_name} (1 {u.unit_name} = {u.conversion_qty} {c.base_unit || "PCS"}) — {formatIDR(u.sell_price)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-xs dark:border-slate-800">
                       <span className="text-[11px] text-slate-400">
-                        Margin: <strong className="font-semibold text-emerald-600 dark:text-emerald-400">{formatIDR(net - c.purchase_price * c.qty)}</strong>
+                        {!c.is_custom && <>Margin: <strong className="font-semibold text-emerald-600 dark:text-emerald-400">{formatIDR(net - c.purchase_price * c.qty)}</strong></>}
+                        {c.is_custom && <span className="text-purple-500 dark:text-purple-400">Item Bebas</span>}
                       </span>
                       <span className="font-bold text-slate-900 dark:text-white">
                         Subtotal: {formatIDR(net)}
@@ -1576,15 +1754,138 @@ export default function PosPage() {
               })}
             </div>
 
-            {/* Tombol Utama "+ Tambah Item Produk" (Warna Hijau standar) */}
-            <div className="mt-4">
+            {/* Tombol Aksi Keranjang */}
+            <div className="mt-3.5 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSelectProductModalOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-600 py-3.5 text-base font-bold text-white shadow-soft transition hover:bg-emerald-700 active:scale-[0.99]"
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-2.5 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-emerald-700 active:scale-[0.98] sm:text-sm"
               >
-                <Plus className="h-5 w-5 stroke-[2.5]" /> Tambah Item Produk
+                <Plus className="h-4 w-4 shrink-0 stroke-[2.5]" />
+                <span className="truncate">Tambah Produk</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setCustomItemOpen(true)}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-300/80 bg-amber-50/80 px-2.5 py-2.5 text-xs font-bold text-amber-800 shadow-xs transition hover:bg-amber-100 active:scale-[0.98] sm:text-sm dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/40"
+              >
+                <Package className="h-4 w-4 shrink-0 stroke-[2.2]" />
+                <span className="truncate">Item Bebas</span>
+              </button>
+            </div>
+
+            {/* Pilih Pelanggan */}
+            <div className="mt-3.5 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/60">
+              <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                <UserSearch className="h-3.5 w-3.5" /> Pelanggan
+              </label>
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadCustomerOptions}
+                value={selectedCustomerOption}
+                onChange={(opt) => {
+                  if (opt) {
+                    setCustomerId(opt.value);
+                    setSelectedCustomerOption(opt);
+                    if (opt.customer?.whatsapp) setReceiptWaPhone(String(opt.customer.whatsapp).replace(/\D/g, ""));
+                  } else {
+                    setCustomerId("");
+                    setSelectedCustomerOption(null);
+                  }
+                }}
+                isClearable
+                placeholder="Cari nama pelanggan / No. WA..."
+                noOptionsMessage={() => "Tidak ditemukan"}
+                loadingMessage={() => "Mencari..."}
+                styles={{
+                  control: (base, state) => ({
+                    ...base,
+                    borderRadius: "0.75rem",
+                    minHeight: "38px",
+                    height: "38px",
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    borderColor: state.isFocused ? (dark ? "#10b981" : "#059669") : (dark ? "#334155" : "#e2e8f0"),
+                    backgroundColor: dark ? "#020617" : "#fff",
+                    color: dark ? "#fff" : "#0f172a",
+                    boxShadow: state.isFocused ? "0 0 0 1px #10b981" : "none",
+                    "&:hover": { borderColor: dark ? "#475569" : "#cbd5e1" },
+                  }),
+                  valueContainer: (base) => ({
+                    ...base,
+                    padding: "0 8px",
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
+                  }),
+                  placeholder: (base) => ({
+                    ...base,
+                    color: dark ? "#64748b" : "#94a3b8",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    margin: 0,
+                    fontSize: "0.8125rem",
+                  }),
+                  singleValue: (base) => ({
+                    ...base,
+                    color: dark ? "#fff" : "#0f172a",
+                    margin: 0,
+                    fontSize: "0.8125rem",
+                  }),
+                  input: (base) => ({
+                    ...base,
+                    color: dark ? "#fff" : "#0f172a",
+                    margin: 0,
+                    padding: 0,
+                  }),
+                  indicatorSeparator: () => ({ display: "none" }),
+                  indicatorsContainer: (base) => ({
+                    ...base,
+                    paddingRight: "4px",
+                  }),
+                  dropdownIndicator: (base) => ({
+                    ...base,
+                    padding: "4px",
+                    color: dark ? "#64748b" : "#94a3b8",
+                  }),
+                  clearIndicator: (base) => ({
+                    ...base,
+                    padding: "4px",
+                    color: dark ? "#64748b" : "#94a3b8",
+                  }),
+                  menu: (base) => ({
+                    ...base,
+                    borderRadius: "0.75rem",
+                    overflow: "hidden",
+                    zIndex: 50,
+                    backgroundColor: dark ? "#0f172a" : "#fff",
+                    border: dark ? "1px solid #1e293b" : "1px solid #e2e8f0",
+                    boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                  }),
+                  option: (base, state) => ({
+                    ...base,
+                    backgroundColor: state.isSelected
+                      ? (dark ? "#047857" : "#059669")
+                      : state.isFocused
+                      ? (dark ? "#1e293b" : "#f1f5f9")
+                      : "transparent",
+                    color: state.isSelected ? "#fff" : (dark ? "#f1f5f9" : "#0f172a"),
+                    fontSize: "0.8125rem",
+                    fontWeight: state.isSelected ? 600 : 500,
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                  }),
+                }}
+              />
+              {selectedCustomerOption?.customer && pointSettings.enabled && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                  <Award className="h-3.5 w-3.5" />
+                  <span>{selectedCustomerOption.customer.total_points || 0} point</span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500">{selectedCustomerOption.customer.total_visits || 0}x kunjungan</span>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
@@ -1896,58 +2197,74 @@ export default function PosPage() {
                 <strong>{inactiveHint.name}</strong> ({inactiveHint.sku}) ditemukan tapi <strong>nonaktif</strong>.
               </div>
             )}
-            <div className="grid gap-2 p-2 sm:grid-cols-2">
-              {products.map((p) => {
-                const left = availableOnGrid(p);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={left <= 0}
-                    onClick={() => {
-                      addToCart(p);
-                      setSelectProductModalOpen(false);
-                    }}
-                    className="flex w-full gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-xs transition hover:border-emerald-500 hover:bg-emerald-50/20 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-500"
-                  >
-                    <div className="min-w-0 flex-1 flex flex-col">
-                      <span className="line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{p.name}</span>
-                      <span className="mt-1 text-emerald-600 font-bold dark:text-emerald-400">
-                        {formatIDR(p.sell_price)}
-                        {p.wholesale_price > 0 && p.wholesale_min_qty > 0 ? (
-                          <span className="ml-1.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                            (Grosir min {p.wholesale_min_qty}: {formatIDR(p.wholesale_price)})
+            {productsLoading ? (
+              <div className="flex min-h-[260px] flex-col items-center justify-center gap-2.5 py-12 text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-600 dark:text-emerald-400" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Memuat produk...</p>
+              </div>
+            ) : products.length === 0 ? (
+              <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 py-10 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+                  <ShoppingBag className="h-6 w-6" />
+                </div>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {q.trim() ? "Tidak ada produk yang cocok" : "Belum ada data produk"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-2 p-2 sm:grid-cols-2">
+                {products.map((p) => {
+                  const left = availableOnGrid(p);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={left <= 0}
+                      onClick={() => {
+                        addToCart(p);
+                        setSelectProductModalOpen(false);
+                      }}
+                      className="flex w-full gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-xs transition hover:border-emerald-500 hover:bg-emerald-50/20 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-500"
+                    >
+                      <div className="min-w-0 flex-1 flex flex-col">
+                        <span className="line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{p.name}</span>
+                        <span className="mt-1 text-emerald-600 font-bold dark:text-emerald-400">
+                          {formatIDR(p.sell_price)}
+                          {p.wholesale_price > 0 && p.wholesale_min_qty > 0 ? (
+                            <span className="ml-1.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              (Grosir min {p.wholesale_min_qty}: {formatIDR(p.wholesale_price)})
+                            </span>
+                          ) : null}
+                        </span>
+                        {p.variants && p.variants.length > 0 ? (
+                          <span className="mt-1 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                            {p.variants.length} Varian
                           </span>
                         ) : null}
-                      </span>
-                      {p.variants && p.variants.length > 0 ? (
-                        <span className="mt-1 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
-                          {p.variants.length} Varian
+                        <span className={`text-xs ${left <= 0 ? "text-red-500" : "text-slate-400"}`}>
+                          Tersisa: {left}
+                          {(reservedByProduct[p.id] || 0) > 0 ? (
+                            <span className="text-slate-500"> / gudang {p.stock}</span>
+                          ) : null}
                         </span>
+                      </div>
+                      {p.image_path ? (
+                        <img
+                          src={uploadSrc(p.image_path)}
+                          alt=""
+                          className="h-20 w-20 shrink-0 self-start rounded-xl border border-slate-200 object-cover dark:border-slate-600"
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
                       ) : null}
-                      <span className={`text-xs ${left <= 0 ? "text-red-500" : "text-slate-400"}`}>
-                        Tersisa: {left}
-                        {(reservedByProduct[p.id] || 0) > 0 ? (
-                          <span className="text-slate-500"> / gudang {p.stock}</span>
-                        ) : null}
-                      </span>
-                    </div>
-                    {p.image_path ? (
-                      <img
-                        src={uploadSrc(p.image_path)}
-                        alt=""
-                        className="h-20 w-20 shrink-0 self-start rounded-xl border border-slate-200 object-cover dark:border-slate-600"
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                        }}
-                      />
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {hasMoreProducts && (
@@ -2190,6 +2507,19 @@ export default function PosPage() {
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Kembalian</span>
                 <span className="text-base font-black text-emerald-700 dark:text-emerald-300">{formatIDR(completedTx.change_amount)}</span>
               </div>
+              {completedTx.points_earned > 0 && (
+                <div className="mt-2 rounded-xl bg-amber-200/60 dark:bg-amber-950/50 p-3 flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                    <Award className="h-4 w-4" /> Point Didapat
+                  </span>
+                  <span className="text-base font-black text-amber-700 dark:text-amber-300">+{completedTx.points_earned} point</span>
+                </div>
+              )}
+              {completedTx.customer && (
+                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 text-right">
+                  Pelanggan: <strong>{completedTx.customer.name}</strong>
+                </div>
+              )}
             </div>
 
             {/* Opsi Action Utama */}
@@ -2263,6 +2593,66 @@ export default function PosPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal Item Bebas / Custom Item */}
+      <Modal open={customItemOpen} title="Tambah Item Bebas" onClose={() => setCustomItemOpen(false)}>
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Tambahkan item yang tidak ada di database produk. Item ini hanya akan masuk ke laporan transaksi tanpa mengurangi stok.
+          </p>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Nama Item *</label>
+            <input
+              type="text"
+              className="mt-1 w-full rounded-xl border px-3 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-950"
+              placeholder="Contoh: Jasa Potong, Plastik, dll"
+              value={customItemName}
+              onChange={(e) => setCustomItemName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Harga Jual (Rp) *</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm font-bold outline-none dark:border-slate-700 dark:bg-slate-950"
+                placeholder="0"
+                value={formatThousandsIdInput(customItemPrice)}
+                onChange={(e) => setCustomItemPrice(e.target.value.replace(/\D/g, "").slice(0, 14))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Jumlah</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm font-bold outline-none dark:border-slate-700 dark:bg-slate-950"
+                placeholder="1"
+                value={customItemQty}
+                onChange={(e) => setCustomItemQty(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              className="w-1/2 rounded-xl border py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800"
+              onClick={() => setCustomItemOpen(false)}
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              className="w-1/2 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600"
+              onClick={addCustomItemToCart}
+            >
+              Tambahkan
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {/* Landscape Orientation Warning Overlay on Mobile */}

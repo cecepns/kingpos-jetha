@@ -33,17 +33,16 @@ function unlinkProductImageFile(imagePathRel) {
 
 const pool = mysql.createPool({
   host: "localhost",
-  user: "root",
-  password: "",
-  database: "db_kingpos",
+  user: "kinq6231_kingpos-jetha",
+  password: "kinq6231_kingpos-jetha",
+  database: "kinq6231_kingpos-jetha",
   waitForConnections: true,
   connectionLimit: 10,
   namedPlaceholders: true,
 });
 
-const app = express();
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: "20mb" }));
+const app = express.Router();
+
 
 
 const storage = multer.diskStorage({
@@ -217,13 +216,13 @@ app.get(
   asyncHandler(async (req, res) => {
     const code = String(req.query.code || "").trim();
     if (!code) return res.status(400).json({ error: "Kode barcode / SKU wajib" });
-    
+
     // Find by exact barcode or SKU first
     const [rows] = await pool.query(
       `SELECT id, name, sku, barcode, sell_price, wholesale_price, wholesale_min_qty, stock, image_path, is_active FROM products WHERE (barcode = ? OR sku = ?) AND is_active = 1 LIMIT 1`,
       [code, code]
     );
-    
+
     let product = rows[0];
     let matchedVariant = null;
 
@@ -823,8 +822,10 @@ app.get(
     for (const r of rows) {
       const [vars] = await pool.query(`SELECT * FROM product_variants WHERE product_id=? ORDER BY id ASC`, [r.id]);
       const [tiers] = await pool.query(`SELECT * FROM product_tiers WHERE product_id=? ORDER BY min_qty ASC`, [r.id]);
+      const [units] = await pool.query(`SELECT * FROM product_unit_conversions WHERE product_id=? ORDER BY id ASC`, [r.id]);
       r.variants = vars || [];
       r.tiers = tiers || [];
+      r.unit_conversions = units || [];
     }
     res.json({ data: rows, total, page, limit });
   })
@@ -843,7 +844,8 @@ app.get(
     );
     const [vars] = await pool.query(`SELECT * FROM product_variants WHERE product_id=? ORDER BY id ASC`, [req.params.id]);
     const [tiers] = await pool.query(`SELECT * FROM product_tiers WHERE product_id=? ORDER BY min_qty ASC`, [req.params.id]);
-    res.json({ ...rows[0], category_ids: cats.map((c) => c.id), variants: vars || [], tiers: tiers || [] });
+    const [units] = await pool.query(`SELECT * FROM product_unit_conversions WHERE product_id=? ORDER BY id ASC`, [req.params.id]);
+    res.json({ ...rows[0], category_ids: cats.map((c) => c.id), variants: vars || [], tiers: tiers || [], unit_conversions: units || [] });
   })
 );
 
@@ -933,6 +935,15 @@ app.post(
             Number(v.wholesale_min_qty || 0),
             Number(v.stock || 0),
           ]
+        );
+      }
+    }
+    if (Array.isArray(b.unit_conversions)) {
+      for (const u of b.unit_conversions) {
+        if (!u.unit_name || !String(u.unit_name).trim()) continue;
+        await pool.query(
+          `INSERT INTO product_unit_conversions (product_id, unit_name, conversion_qty, sell_price) VALUES (?,?,?,?)`,
+          [pid, String(u.unit_name).trim(), Number(u.conversion_qty) || 1, Number(u.sell_price) || 0]
         );
       }
     }
@@ -1047,6 +1058,16 @@ app.put(
             Number(v.wholesale_min_qty || 0),
             Number(v.stock || 0),
           ]
+        );
+      }
+    }
+    await pool.query(`DELETE FROM product_unit_conversions WHERE product_id=?`, [pid]);
+    if (Array.isArray(b.unit_conversions)) {
+      for (const u of b.unit_conversions) {
+        if (!u.unit_name || !String(u.unit_name).trim()) continue;
+        await pool.query(
+          `INSERT INTO product_unit_conversions (product_id, unit_name, conversion_qty, sell_price) VALUES (?,?,?,?)`,
+          [pid, String(u.unit_name).trim(), Number(u.conversion_qty) || 1, Number(u.sell_price) || 0]
         );
       }
     }
@@ -1245,11 +1266,15 @@ app.post(
   kasirOrAdmin,
   asyncHandler(async (req, res) => {
     const b = req.body;
+    const memberBarcode = `MBR-${Date.now().toString(36).toUpperCase()}`;
     const [r] = await pool.query(
-      `INSERT INTO customers (name, whatsapp, address, category, notes) VALUES (?,?,?,?,?)`,
-      [b.name, b.whatsapp || null, b.address || null, b.category || "umum", b.notes || null]
+      `INSERT INTO customers (name, whatsapp, address, category, notes, member_barcode) VALUES (?,?,?,?,?,?)`,
+      [b.name, b.whatsapp || null, b.address || null, b.category || "umum", b.notes || null, memberBarcode]
     );
-    res.status(201).json({ id: r.insertId });
+    // Update barcode to use stable ID-based format
+    const finalBarcode = `MBR-${r.insertId}`;
+    await pool.query(`UPDATE customers SET member_barcode=? WHERE id=?`, [finalBarcode, r.insertId]);
+    res.status(201).json({ id: r.insertId, member_barcode: finalBarcode });
   })
 );
 
@@ -1259,12 +1284,13 @@ app.put(
   kasirOrAdmin,
   asyncHandler(async (req, res) => {
     const b = req.body;
-    await pool.query(`UPDATE customers SET name=?, whatsapp=?, address=?, category=?, notes=? WHERE id=?`, [
+    await pool.query(`UPDATE customers SET name=?, whatsapp=?, address=?, category=?, notes=?, member_barcode=COALESCE(?, member_barcode) WHERE id=?`, [
       b.name,
       b.whatsapp,
       b.address,
       b.category,
       b.notes,
+      b.member_barcode || null,
       req.params.id,
     ]);
     res.json({ ok: true });
@@ -1277,6 +1303,132 @@ app.delete(
   requireRoles("admin"),
   asyncHandler(async (req, res) => {
     await pool.query(`DELETE FROM customers WHERE id=?`, [req.params.id]);
+    res.json({ ok: true });
+  })
+);
+
+// ── Customer Barcode Lookup ──────────────────────────────────
+app.get(
+  "/api/customers/barcode/:code",
+  requireAuth,
+  kasirOrAdmin,
+  asyncHandler(async (req, res) => {
+    const code = String(req.params.code).trim();
+    const [rows] = await pool.query(`SELECT * FROM customers WHERE member_barcode=? LIMIT 1`, [code]);
+    if (!rows.length) return res.status(404).json({ error: "Pelanggan tidak ditemukan" });
+    res.json(rows[0]);
+  })
+);
+
+// ── Customer Stats ───────────────────────────────────────────
+app.get(
+  "/api/customers/:id/stats",
+  requireAuth,
+  kasirOrAdmin,
+  asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const [cust] = await pool.query(`SELECT * FROM customers WHERE id=?`, [id]);
+    if (!cust.length) return res.status(404).json({ error: "Not found" });
+    const [[txStats]] = await pool.query(
+      `SELECT COUNT(*) AS total_transactions, COALESCE(SUM(grand_total),0) AS total_spending
+       FROM transactions WHERE customer_id=? AND status='completed'`,
+      [id]
+    );
+    res.json({
+      ...cust[0],
+      total_transactions: txStats.total_transactions,
+      total_spending: txStats.total_spending,
+    });
+  })
+);
+
+// ── Customer Points Log ──────────────────────────────────────
+app.get(
+  "/api/customers/:id/points-log",
+  requireAuth,
+  kasirOrAdmin,
+  asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const { page, limit, offset } = listPagination(req);
+    const [rows] = await pool.query(
+      `SELECT SQL_CALC_FOUND_ROWS cpl.*, u.name AS created_by_name
+       FROM customer_points_log cpl
+       LEFT JOIN users u ON u.id = cpl.created_by
+       WHERE cpl.customer_id=? ORDER BY cpl.id DESC LIMIT ? OFFSET ?`,
+      [id, limit, offset]
+    );
+    const [[{ total }]] = await pool.query(`SELECT FOUND_ROWS() AS total`);
+    res.json({ data: rows, total, page, limit });
+  })
+);
+
+// ── Customer Add/Deduct Points Manual ────────────────────────
+app.post(
+  "/api/customers/:id/points",
+  requireAuth,
+  requireRoles("admin", "owner"),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id;
+    const { points, notes } = req.body;
+    const pts = Number(points);
+    if (!Number.isFinite(pts) || pts === 0) return res.status(400).json({ error: "Jumlah point harus valid" });
+    const [cust] = await pool.query(`SELECT * FROM customers WHERE id=?`, [id]);
+    if (!cust.length) return res.status(404).json({ error: "Pelanggan tidak ditemukan" });
+    await pool.query(
+      `INSERT INTO customer_points_log (customer_id, points, type, notes, created_by) VALUES (?,?,?,?,?)`,
+      [id, pts, "manual", notes || (pts > 0 ? "Tambah point manual" : "Kurangi point manual"), req.user.id]
+    );
+    await pool.query(`UPDATE customers SET total_points = GREATEST(0, total_points + ?) WHERE id=?`, [pts, id]);
+    const [[updated]] = await pool.query(`SELECT total_points FROM customers WHERE id=?`, [id]);
+    res.json({ ok: true, total_points: updated.total_points });
+  })
+);
+
+// ── Product Unit Conversions CRUD ────────────────────────────
+app.get(
+  "/api/products/:id/units",
+  requireAuth,
+  kasirOrAdmin,
+  asyncHandler(async (req, res) => {
+    const [rows] = await pool.query(`SELECT * FROM product_unit_conversions WHERE product_id=? ORDER BY id ASC`, [req.params.id]);
+    res.json({ data: rows });
+  })
+);
+
+app.post(
+  "/api/products/:id/units",
+  requireAuth,
+  requireRoles("admin", "owner"),
+  asyncHandler(async (req, res) => {
+    const b = req.body;
+    const [r] = await pool.query(
+      `INSERT INTO product_unit_conversions (product_id, unit_name, conversion_qty, sell_price) VALUES (?,?,?,?)`,
+      [req.params.id, b.unit_name, Number(b.conversion_qty) || 1, Number(b.sell_price) || 0]
+    );
+    res.status(201).json({ id: r.insertId });
+  })
+);
+
+app.put(
+  "/api/products/:id/units/:unitId",
+  requireAuth,
+  requireRoles("admin", "owner"),
+  asyncHandler(async (req, res) => {
+    const b = req.body;
+    await pool.query(
+      `UPDATE product_unit_conversions SET unit_name=?, conversion_qty=?, sell_price=? WHERE id=? AND product_id=?`,
+      [b.unit_name, Number(b.conversion_qty) || 1, Number(b.sell_price) || 0, req.params.unitId, req.params.id]
+    );
+    res.json({ ok: true });
+  })
+);
+
+app.delete(
+  "/api/products/:id/units/:unitId",
+  requireAuth,
+  requireRoles("admin", "owner"),
+  asyncHandler(async (req, res) => {
+    await pool.query(`DELETE FROM product_unit_conversions WHERE id=? AND product_id=?`, [req.params.unitId, req.params.id]);
     res.json({ ok: true });
   })
 );
@@ -1367,6 +1519,34 @@ async function createPosTransaction(body, userId, conn) {
   const lineRows = [];
 
   for (const it of items) {
+    // Custom item: no product_id, no stock check
+    if (it.is_custom) {
+      const qty = Number(it.qty) || 1;
+      const sell = Number(it.sell_price || 0);
+      const disc = Math.max(0, Number(it.discount_amount || 0));
+      const lineSub = sell * qty;
+      const lineTotal = lineSub - disc;
+      grossSubtotal += lineSub;
+      lineDiscountSum += disc;
+      lineRows.push({
+        product_id: null,
+        variant_id: null,
+        product_name: it.name || "Item Custom",
+        variant_name: null,
+        barcode: null,
+        purchase_price: 0,
+        sell_price: sell,
+        qty,
+        discount_amount: disc,
+        subtotal: lineSub,
+        line_total: lineTotal,
+        margin_amount: lineTotal,
+        stock_available: 999,
+        is_custom: 1,
+      });
+      continue;
+    }
+
     const [pr] = await conn.query(`SELECT * FROM products WHERE id=? FOR UPDATE`, [it.product_id]);
     if (!pr.length) throw new Error(`Produk ${it.product_id} tidak ada`);
     const p = pr[0];
@@ -1395,6 +1575,7 @@ async function createPosTransaction(body, userId, conn) {
       line_total: lineTotal,
       margin_amount: marginLine,
       stock_available: p.stock,
+      is_custom: 0,
     });
   }
 
@@ -1410,6 +1591,7 @@ async function createPosTransaction(body, userId, conn) {
 
   if (status === "completed") {
     for (const lr of lineRows) {
+      if (lr.is_custom) continue; // skip stock check for custom items
       const [pr] = await conn.query(`SELECT stock FROM products WHERE id=? FOR UPDATE`, [lr.product_id]);
       if (pr[0].stock < lr.qty) throw new Error(`Stok tidak cukup: ${lr.product_name}`);
     }
@@ -1445,8 +1627,8 @@ async function createPosTransaction(body, userId, conn) {
   for (const lr of lineRows) {
     await conn.query(
       `INSERT INTO transaction_items (transaction_id, product_id, variant_id, product_name, variant_name, barcode, purchase_price, sell_price, qty,
-        discount_amount, subtotal, line_total, margin_amount)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        discount_amount, subtotal, line_total, margin_amount, is_custom)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         txId,
         lr.product_id,
@@ -1461,6 +1643,7 @@ async function createPosTransaction(body, userId, conn) {
         lr.subtotal,
         lr.line_total,
         lr.margin_amount,
+        lr.is_custom || 0,
       ]
     );
 
@@ -1537,8 +1720,10 @@ async function createPosTransaction(body, userId, conn) {
     throw new Error("Pembayaran wajib untuk menyelesaikan transaksi");
   }
 
+  let pointsEarned = 0;
   if (status === "completed") {
     for (const lr of lineRows) {
+      if (lr.is_custom) continue; // skip stock deduction for custom items
       await conn.query(`UPDATE products SET stock = stock - ? WHERE id=?`, [lr.qty, lr.product_id]);
       await conn.query(
         `INSERT INTO stock_movements (product_id, type, qty, reference_type, reference_id, created_by)
@@ -1547,11 +1732,30 @@ async function createPosTransaction(body, userId, conn) {
       );
     }
     if (customer_id) {
-      await conn.query(`UPDATE customers SET total_purchase = total_purchase + ? WHERE id=?`, [grandTotal, customer_id]);
+      await conn.query(`UPDATE customers SET total_purchase = total_purchase + ?, total_visits = total_visits + 1 WHERE id=?`, [grandTotal, customer_id]);
+
+      // Auto-earn points
+      try {
+        const [[pointCfg]] = await conn.query(`SELECT value FROM settings WHERE \`key\`='point_enabled'`);
+        const [[perAmtCfg]] = await conn.query(`SELECT value FROM settings WHERE \`key\`='point_per_amount'`);
+        const pointEnabled = pointCfg ? String(pointCfg.value) === "1" : false;
+        const pointPerAmount = perAmtCfg ? Number(perAmtCfg.value) : 10000;
+        if (pointEnabled && pointPerAmount > 0 && grandTotal > 0) {
+          pointsEarned = Math.floor(grandTotal / pointPerAmount);
+          if (pointsEarned > 0) {
+            await conn.query(
+              `INSERT INTO customer_points_log (customer_id, transaction_id, points, type, notes, created_by)
+               VALUES (?,?,?,?,?,?)`,
+              [customer_id, txId, pointsEarned, "earn", `Belanja ${invoice_no}`, userId]
+            );
+            await conn.query(`UPDATE customers SET total_points = total_points + ? WHERE id=?`, [pointsEarned, customer_id]);
+          }
+        }
+      } catch { /* points calculation should not break transaction */ }
     }
   }
 
-  return { id: txId, invoice_no, grand_total: grandTotal, change_amount: changeAmount };
+  return { id: txId, invoice_no, grand_total: grandTotal, change_amount: changeAmount, points_earned: pointsEarned };
 }
 
 /** Hapus transaksi selesai: balik kas (cash_flows trx:), stok, total belanja pelanggan; receivable harus lunas. */
@@ -3663,6 +3867,4 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: err.message || "Server error" });
 });
 
-app.listen(PORT, () => {
-  console.log(`API listening on ${PORT}`);
-});
+module.exports = app;

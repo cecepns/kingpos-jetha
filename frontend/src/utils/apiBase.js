@@ -1,7 +1,5 @@
 /** Tanpa slash di akhir */
-// const DEFAULT_BASE = "https://api-be.sekargumilangorchid.my.id";
-// const DEFAULT_BASE = "https://api.kingcreativestudio.my.id/pos-sekargumilang";
-const DEFAULT_BASE = "https://api.kingcreativestudio.my.id/kingpos";
+const DEFAULT_BASE = "https://api.kingcreativestudio.my.id/kingpos-jetha";
 
 function normalizeBase(url) {
   return String(url || DEFAULT_BASE)

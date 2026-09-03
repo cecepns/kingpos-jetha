@@ -23,6 +23,8 @@ const defaultValues = {
   enable_pay_cash: "1",
   enable_pay_transfer: "0",
   enable_pay_qris: "0",
+  point_enabled: "1",
+  point_per_amount: "10000",
 };
 
 export default function SettingsPage() {
@@ -191,6 +193,36 @@ export default function SettingsPage() {
               <span>QRIS</span>
             </label>
           </div>
+        </div>
+        <div className="rounded-xl border p-3 dark:border-slate-800 space-y-3 bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-amber-950 dark:text-amber-300">Sistem Point Membership</label>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold">
+              <input
+                type="checkbox"
+                className="rounded text-amber-600 focus:ring-amber-500 h-4 w-4"
+                checked={form.watch("point_enabled") === "1"}
+                onChange={(e) => form.setValue("point_enabled", e.target.checked ? "1" : "0")}
+              />
+              <span>Aktifkan Point</span>
+            </label>
+          </div>
+          {form.watch("point_enabled") === "1" && (
+            <div>
+              <label className="text-xs text-slate-600 dark:text-slate-400">Setiap nominal belanja (Rp) dapat 1 point</label>
+              <input
+                type="number"
+                min={100}
+                step={100}
+                placeholder="Contoh: 10000"
+                className="mt-1 w-full rounded-xl border px-3 py-2 text-sm font-semibold dark:bg-slate-950"
+                {...form.register("point_per_amount")}
+              />
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                Contoh: jika diisi 10.000, transaksi Rp50.000 akan otomatis memberikan 5 point kepada pelanggan terdaftar.
+              </p>
+            </div>
+          )}
         </div>
         <div>
           <label className="text-xs text-slate-500">Catatan WhatsApp</label>
