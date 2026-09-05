@@ -31,7 +31,7 @@ import {
   Loader2,
 } from "lucide-react";
 import Select from "react-select";
-import AsyncSelect from "react-select/async";
+import AsyncCreatableSelect from "react-select/async-creatable";
 import JsBarcode from "jsbarcode";
 import { Html5Qrcode } from "html5-qrcode";
 import api from "../api/client";
@@ -454,10 +454,10 @@ export default function PosPage() {
     );
   }
 
-  // Customer search for AsyncSelect
+  // Customer search for AsyncCreatableSelect
   const loadCustomerOptions = useCallback(async (inputValue) => {
     try {
-      const { data } = await api.get("/api/customers", { params: { q: inputValue, page: 1, limit: 20 } });
+      const { data } = await api.get(API_ENDPOINTS.CUSTOMERS.LIST, { params: { q: inputValue, page: 1, limit: 20 } });
       return (data.data || []).map((c) => ({
         value: String(c.id),
         label: `${c.name}${c.whatsapp ? " (" + c.whatsapp + ")" : ""}`,
@@ -465,6 +465,36 @@ export default function PosPage() {
       }));
     } catch {
       return [];
+    }
+  }, []);
+
+  const handleCreateCustomer = useCallback(async (inputValue) => {
+    const trimmed = (inputValue || "").trim();
+    if (!trimmed) return;
+    const t = toast.loading(`Menambahkan pelanggan "${trimmed}"...`);
+    try {
+      const { data } = await api.post(API_ENDPOINTS.CUSTOMERS.CREATE, {
+        name: trimmed,
+        category: "umum",
+      });
+      const newCustomer = {
+        id: data.id,
+        name: trimmed,
+        member_barcode: data.member_barcode,
+        total_points: 0,
+        total_visits: 0,
+      };
+      const newOption = {
+        value: String(data.id),
+        label: trimmed,
+        customer: newCustomer,
+      };
+      setCustomers((prev) => [newCustomer, ...prev]);
+      setCustomerId(String(data.id));
+      setSelectedCustomerOption(newOption);
+      toast.success(`Pelanggan "${trimmed}" berhasil ditambahkan`, { id: t });
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Gagal menambahkan pelanggan", { id: t });
     }
   }, []);
 
@@ -816,6 +846,14 @@ export default function PosPage() {
         const paidSum = pays.reduce((s, p) => s + p.amount, 0);
         const changeAmt = Math.max(0, paidSum - grandTotal);
         const queueNo = data.id ? `#${data.id}` : `#${data.invoice_no || "1"}`;
+        const custObj = selectedCustomerOption?.customer || customers.find((c) => String(c.id) === String(customerId)) || null;
+        const custName = custObj?.name || "";
+        const totalPointsNow =
+          data.customer_total_points != null
+            ? data.customer_total_points
+            : custObj
+            ? Number(custObj.total_points || 0) + Number(data.points_earned || 0)
+            : null;
 
         setCompletedTx({
           id: data.id,
@@ -833,7 +871,9 @@ export default function PosPage() {
           additionalFee,
           additionalFeeName,
           payments: pays,
-          customer: selectedCustomerOption?.customer || customers.find((c) => String(c.id) === String(customerId)) || null,
+          customer: custObj ? { ...custObj, total_points: totalPointsNow } : null,
+          customer_name: custName,
+          customer_total_points: totalPointsNow,
           receiptWaPhone,
           points_earned: data.points_earned || 0,
         });
@@ -881,6 +921,9 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       invoiceNo: tx.invoice_no,
       queueNo: tx.queue_no,
+      customerName: tx.customer?.name || tx.customer_name || "",
+      customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
+      pointsEarned: tx.points_earned || 0,
       dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
@@ -913,6 +956,9 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       invoiceNo: tx.invoice_no,
       queueNo: tx.queue_no,
+      customerName: tx.customer?.name || tx.customer_name || "",
+      customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
+      pointsEarned: tx.points_earned || 0,
       dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
@@ -941,6 +987,9 @@ export default function PosPage() {
       widthMm: Number(receiptCfg.thermal_width_mm) || 80,
       invoiceNo: tx.invoice_no,
       queueNo: tx.queue_no,
+      customerName: tx.customer?.name || tx.customer_name || "",
+      customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
+      pointsEarned: tx.points_earned || 0,
       dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
@@ -997,6 +1046,9 @@ export default function PosPage() {
         storeName: receiptCfg.store_name,
         invoiceNo: tx.invoice_no,
         queueNo: tx.queue_no,
+        customerName: tx.customer?.name || tx.customer_name || "",
+        customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
+        pointsEarned: tx.points_earned || 0,
         dateStr: getTxReceiptDateStr(tx),
         lines: tx.lines || [],
         subtotal: tx.subtotal || 0,
@@ -1026,6 +1078,8 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       widthMm: Number(receiptCfg.thermal_width_mm) || 80,
       invoiceNo: "Preview keranjang",
+      customerName: selectedCustomerOption?.customer?.name || "",
+      customerPoints: selectedCustomerOption?.customer?.total_points ?? null,
       dateStr: saleDate || new Date().toLocaleDateString("id-ID"),
       lines: cart,
       subtotal,
@@ -1056,6 +1110,8 @@ export default function PosPage() {
       buildReceiptWhatsAppText({
         storeName: receiptCfg.store_name,
         invoiceNo,
+        customerName: selectedCustomerOption?.customer?.name || "",
+        customerPoints: selectedCustomerOption?.customer?.total_points ?? null,
         dateStr: saleDate,
         lines: cart,
         subtotal,
@@ -1779,7 +1835,7 @@ export default function PosPage() {
               <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400">
                 <UserSearch className="h-3.5 w-3.5" /> Pelanggan
               </label>
-              <AsyncSelect
+              <AsyncCreatableSelect
                 cacheOptions
                 defaultOptions
                 loadOptions={loadCustomerOptions}
@@ -1794,9 +1850,11 @@ export default function PosPage() {
                     setSelectedCustomerOption(null);
                   }
                 }}
+                onCreateOption={handleCreateCustomer}
+                formatCreateLabel={(input) => `+ Tambah pelanggan baru: "${input}"`}
                 isClearable
-                placeholder="Cari nama pelanggan / No. WA..."
-                noOptionsMessage={() => "Tidak ditemukan"}
+                placeholder="Ketik/cari pelanggan atau tambah baru..."
+                noOptionsMessage={() => "Ketik nama pelanggan baru & tekan Enter"}
                 loadingMessage={() => "Mencari..."}
                 styles={{
                   control: (base, state) => ({
@@ -2491,9 +2549,13 @@ export default function PosPage() {
 
             {/* Rincian Ringkas Transaksi */}
             <div className="rounded-2xl border border-amber-200/70 bg-amber-50/70 p-4 text-left shadow-xs dark:border-slate-700 dark:bg-slate-800/80 space-y-2.5">
-              <div className="flex items-center justify-between border-b border-amber-200/50 dark:border-slate-700/60 pb-2">
-                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">No. Antrian</span>
-                <span className="text-xl font-black text-slate-900 dark:text-white font-mono">{completedTx.queue_no}</span>
+              <div className="flex items-center justify-between border-b border-amber-200/50 dark:border-slate-700/60 pb-2.5">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                  <UserCheck className="h-4 w-4 text-brand-600 dark:text-brand-400" /> Pelanggan
+                </span>
+                <span className="text-sm font-extrabold text-slate-900 dark:text-white truncate max-w-[200px] text-right">
+                  {completedTx.customer?.name || completedTx.customer_name || "Pelanggan Umum"}
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400 pt-1">
                 <span>Total Harga</span>
@@ -2507,19 +2569,30 @@ export default function PosPage() {
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Kembalian</span>
                 <span className="text-base font-black text-emerald-700 dark:text-emerald-300">{formatIDR(completedTx.change_amount)}</span>
               </div>
-              {completedTx.points_earned > 0 && (
-                <div className="mt-2 rounded-xl bg-amber-200/60 dark:bg-amber-950/50 p-3 flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                    <Award className="h-4 w-4" /> Point Didapat
-                  </span>
-                  <span className="text-base font-black text-amber-700 dark:text-amber-300">+{completedTx.points_earned} point</span>
+              {(completedTx.customer_total_points != null || completedTx.customer?.total_points != null || completedTx.points_earned > 0) && (
+                <div className="mt-2 rounded-xl bg-amber-200/60 dark:bg-amber-950/50 p-3 space-y-1.5 border border-amber-300/40 dark:border-amber-900/40">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                      <Award className="h-4 w-4 text-amber-600 dark:text-amber-400" /> Total Point Pelanggan
+                    </span>
+                    <span className="text-sm font-black text-amber-900 dark:text-amber-200">
+                      {completedTx.customer_total_points ?? completedTx.customer?.total_points ?? 0} Poin
+                    </span>
+                  </div>
+                  {completedTx.points_earned > 0 && (
+                    <div className="flex items-center justify-between text-[11px] text-amber-700 dark:text-amber-300 font-semibold pt-1 border-t border-amber-200/60 dark:border-amber-900/50">
+                      <span>Point Didapat Transaksi Ini</span>
+                      <span className="font-bold">+{completedTx.points_earned} Poin</span>
+                    </div>
+                  )}
                 </div>
               )}
-              {completedTx.customer && (
-                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 text-right">
-                  Pelanggan: <strong>{completedTx.customer.name}</strong>
-                </div>
-              )}
+              <div className="flex items-center justify-between border-t border-amber-200/50 dark:border-slate-700/60 pt-2.5">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                  <Ticket className="h-3.5 w-3.5" /> No. Antrian
+                </span>
+                <span className="text-base font-black text-slate-900 dark:text-white font-mono">{completedTx.queue_no}</span>
+              </div>
             </div>
 
             {/* Opsi Action Utama */}

@@ -1755,7 +1755,22 @@ async function createPosTransaction(body, userId, conn) {
     }
   }
 
-  return { id: txId, invoice_no, grand_total: grandTotal, change_amount: changeAmount, points_earned: pointsEarned };
+  let customerTotalPoints = null;
+  if (customer_id) {
+    try {
+      const [[custRow]] = await conn.query(`SELECT total_points FROM customers WHERE id=?`, [customer_id]);
+      if (custRow) customerTotalPoints = Number(custRow.total_points || 0);
+    } catch { /* */ }
+  }
+
+  return {
+    id: txId,
+    invoice_no,
+    grand_total: grandTotal,
+    change_amount: changeAmount,
+    points_earned: pointsEarned,
+    customer_total_points: customerTotalPoints,
+  };
 }
 
 /** Hapus transaksi selesai: balik kas (cash_flows trx:), stok, total belanja pelanggan; receivable harus lunas. */
@@ -1892,7 +1907,7 @@ app.get(
   kasirOrAdmin,
   asyncHandler(async (req, res) => {
     const [tx] = await pool.query(
-      `SELECT t.*, u.name AS cashier_name, c.name AS customer_name, c.whatsapp AS customer_wa,
+      `SELECT t.*, u.name AS cashier_name, c.name AS customer_name, c.whatsapp AS customer_wa, c.total_points AS customer_total_points,
               COALESCE((SELECT SUM(r.amount) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_amount,
               COALESCE((SELECT SUM(r.paid_amount) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_paid_amount,
               COALESCE((SELECT SUM(r.balance) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_balance

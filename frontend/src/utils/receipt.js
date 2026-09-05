@@ -19,6 +19,9 @@ export function buildThermalReceiptHtml({
   widthMm = 80,
   invoiceNo = "—",
   queueNo = "",
+  customerName = "",
+  customerPoints = null,
+  pointsEarned = 0,
   dateStr = "",
   lines = [],
   subtotal = 0,
@@ -75,7 +78,7 @@ export function buildThermalReceiptHtml({
   .small{font-size:10px;}
   .muted{color:#555;}
   .tot{font-weight:700;font-size:12px;margin-top:8px;padding-top:6px;border-top:1px solid #000;}
-  .queue-box{border:1px solid #000;padding:4px;margin:4px 0;text-align:center;}
+  .queue-box{border:1px solid #000;padding:4px;margin:6px 0;text-align:center;}
   .queue-num{font-weight:900;font-size:16px;}
   hr{border:none;border-top:1px dashed #999;margin:6px 0;}
 </style></head><body><div class="wrap">
@@ -83,7 +86,7 @@ export function buildThermalReceiptHtml({
 ${storeAddress ? `<div class="c small">${esc(storeAddress)}</div>` : ""}
 ${storePhone ? `<div class="c small">${esc(storePhone)}</div>` : ""}
 <hr/>
-${queueNo ? `<div class="queue-box"><div class="small">NO. ANTRIAN</div><div class="queue-num">${esc(queueNo)}</div></div><hr/>` : ""}
+${customerName ? `<div class="row small"><span>Pelanggan</span><span style="font-weight:700;">${esc(customerName)}</span></div>` : ""}
 <div class="row small"><span>${esc(invoiceNo)}</span><span>${esc(dateStr)}</span></div>
 <hr/>
 ${lineRows}
@@ -94,6 +97,9 @@ ${additionalFee > 0 ? `<div class="row muted"><span>${esc(additionalFeeName || "
 <div class="row tot"><span>TOTAL</span><span>${formatIDR(grandTotal)}</span></div>
 ${payRows ? `<hr/><div class="small">Bayar:</div>${payRows}` : ""}
 ${changeAmount > 0 ? `<div class="row" style="font-weight:700"><span>Kembalian</span><span>${formatIDR(changeAmount)}</span></div>` : ""}
+${customerPoints != null ? `<hr/><div class="row small" style="font-weight:700;"><span>Total Point Pelanggan</span><span>${esc(customerPoints)} Poin</span></div>` : ""}
+${pointsEarned > 0 ? `<div class="row small muted"><span>Point Didapat</span><span>+${pointsEarned} Poin</span></div>` : ""}
+${queueNo ? `<hr/><div class="queue-box"><div class="small">NO. ANTRIAN</div><div class="queue-num">${esc(queueNo)}</div></div>` : ""}
 ${footer ? `<hr/><div class="c small">${esc(footer)}</div>` : ""}
 </div><script>window.onload=function(){window.print();}<\/script></body></html>`;
 }
@@ -102,6 +108,9 @@ export function buildReceiptWhatsAppText({
   storeName,
   invoiceNo,
   queueNo,
+  customerName = "",
+  customerPoints = null,
+  pointsEarned = 0,
   dateStr,
   lines,
   subtotal,
@@ -115,7 +124,7 @@ export function buildReceiptWhatsAppText({
   payments,
 }) {
   let hdr = `${storeName}\n`;
-  if (queueNo) hdr += `*NO. ANTRIAN: ${queueNo}*\n`;
+  if (customerName) hdr += `Pelanggan: ${customerName}\n`;
   hdr += `${invoiceNo} · ${dateStr}\n---\n`;
   const items = lines
     .map((c) => {
@@ -136,6 +145,9 @@ export function buildReceiptWhatsAppText({
   if (payments?.length)
     foot += `\nBayar:\n${payments.map((p) => `- ${p.method}: ${formatIDR(p.amount)}`).join("\n")}`;
   if (changeAmount > 0) foot += `\nKembalian: ${formatIDR(changeAmount)}`;
+  if (customerPoints != null) foot += `\nTotal Point: ${customerPoints} Poin`;
+  if (pointsEarned > 0) foot += ` (Point Didapat: +${pointsEarned})`;
+  if (queueNo) foot += `\n\n*NO. ANTRIAN: ${queueNo}*`;
   foot += "\n\nTerima kasih.";
   return hdr + items + foot;
 }
@@ -148,6 +160,9 @@ export function buildReceiptPlainText({
   footer = "",
   invoiceNo = "—",
   queueNo = "",
+  customerName = "",
+  customerPoints = null,
+  pointsEarned = 0,
   dateStr = "",
   lines = [],
   subtotal = 0,
@@ -181,9 +196,8 @@ export function buildReceiptPlainText({
   if (storeAddress) txt += centerText(storeAddress) + "\n";
   if (storePhone) txt += centerText(storePhone) + "\n";
   txt += lineStr + "\n";
-  if (queueNo) {
-    txt += centerText(`ANTRIAN: ${queueNo}`) + "\n";
-    txt += lineStr + "\n";
+  if (customerName) {
+    txt += padRightLeft("Pelanggan", customerName) + "\n";
   }
   txt += padRightLeft(invoiceNo, dateStr) + "\n";
   txt += lineStr + "\n";
@@ -218,6 +232,19 @@ export function buildReceiptPlainText({
     txt += padRightLeft("Kembalian", formatIDR(changeAmount)) + "\n";
   }
 
+  if (customerPoints != null) {
+    txt += lineStr + "\n";
+    txt += padRightLeft("Total Point", `${customerPoints} Poin`) + "\n";
+    if (pointsEarned > 0) {
+      txt += padRightLeft("Point Didapat", `+${pointsEarned} Poin`) + "\n";
+    }
+  }
+
+  if (queueNo) {
+    txt += lineStr + "\n";
+    txt += centerText(`ANTRIAN: ${queueNo}`) + "\n";
+  }
+
   if (footer) {
     txt += lineStr + "\n";
     txt += centerText(footer) + "\n";
@@ -236,6 +263,9 @@ export function buildEscPosReceiptBinary({
   footer = "",
   invoiceNo = "—",
   queueNo = "",
+  customerName = "",
+  customerPoints = null,
+  pointsEarned = 0,
   dateStr = "",
   lines = [],
   subtotal = 0,
@@ -260,9 +290,8 @@ export function buildEscPosReceiptBinary({
   if (storeAddress) encoder.line(storeAddress);
   if (storePhone) encoder.line(storePhone);
   encoder.line(lineStr);
-  if (queueNo) {
-    encoder.align("center").bold(true).size("large").line(`ANTRIAN ${queueNo}`).size("normal").bold(false);
-    encoder.line(lineStr);
+  if (customerName) {
+    encoder.align("left").line(`Pelanggan: ${customerName}`);
   }
   encoder.align("left").line(`${invoiceNo}  ${dateStr}`).line(lineStr);
 
@@ -303,6 +332,19 @@ export function buildEscPosReceiptBinary({
   }
   if (changeAmount > 0) {
     writePair("Kembalian", formatIDR(changeAmount));
+  }
+
+  if (customerPoints != null) {
+    encoder.line(lineStr);
+    writePair("Total Point", `${customerPoints} Poin`);
+    if (pointsEarned > 0) {
+      writePair("Point Didapat", `+${pointsEarned} Poin`);
+    }
+  }
+
+  if (queueNo) {
+    encoder.line(lineStr);
+    encoder.align("center").bold(true).size("large").line(`ANTRIAN ${queueNo}`).size("normal").bold(false);
   }
 
   if (footer) {
