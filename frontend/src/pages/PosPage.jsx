@@ -707,35 +707,63 @@ export default function PosPage() {
         const isCompleted = String(data.status) === "completed";
         const lines = await Promise.all(
           (data.items || []).map(async (it) => {
+            const isCustom = Boolean(it.is_custom || !it.product_id);
+            if (isCustom) {
+              return {
+                product_id: null,
+                name: it.product_name || "Item Custom",
+                barcode: it.barcode || "",
+                stock: 999,
+                purchase_price: Number(it.purchase_price || 0),
+                sell_price: Number(it.sell_price || 0),
+                qty: Number(it.qty || 1),
+                discount_amount: Number(it.discount_amount || 0),
+                is_custom: true,
+              };
+            }
             try {
               const { data: pr } = await api.get(`/api/products/${it.product_id}`, { skipToast: true });
               return {
                 product_id: it.product_id,
-                name: it.product_name,
+                name: it.product_name || pr.name,
                 barcode: it.barcode || pr.barcode,
                 stock: Number(pr.stock),
                 purchase_price: Number(it.purchase_price ?? pr.purchase_price),
                 sell_price: Number(it.sell_price),
                 qty: Number(it.qty),
                 discount_amount: Number(it.discount_amount || 0),
+                is_custom: false,
               };
             } catch {
               return {
                 product_id: it.product_id,
-                name: it.product_name,
-                barcode: it.barcode,
-                stock: Math.max(Number(it.qty), 1),
-                purchase_price: Number(it.purchase_price),
-                sell_price: Number(it.sell_price),
-                qty: Number(it.qty),
+                name: it.product_name || `Produk #${it.product_id}`,
+                barcode: it.barcode || "",
+                stock: Math.max(Number(it.qty || 1), 1),
+                purchase_price: Number(it.purchase_price || 0),
+                sell_price: Number(it.sell_price || 0),
+                qty: Number(it.qty || 1),
                 discount_amount: Number(it.discount_amount || 0),
+                is_custom: !it.product_id,
               };
             }
           })
         );
         if (cancelled) return;
         setCart(lines);
-        if (data.customer_id) setCustomerId(String(data.customer_id));
+        if (data.customer_id) {
+          setCustomerId(String(data.customer_id));
+          setSelectedCustomerOption({
+            value: String(data.customer_id),
+            label: data.customer_name || "Pelanggan",
+            customer: {
+              id: data.customer_id,
+              name: data.customer_name,
+              whatsapp: data.customer_wa,
+              total_points: data.customer_total_points,
+            },
+          });
+        }
         setNotes(data.notes || "");
         setDiscountTotal(Number(data.discount_total || 0));
         setTaxPercent(Number(data.tax_percent || 0));

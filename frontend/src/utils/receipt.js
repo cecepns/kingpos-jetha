@@ -97,7 +97,8 @@ ${additionalFee > 0 ? `<div class="row muted"><span>${esc(additionalFeeName || "
 <div class="row tot"><span>TOTAL</span><span>${formatIDR(grandTotal)}</span></div>
 ${payRows ? `<hr/><div class="small">Bayar:</div>${payRows}` : ""}
 ${changeAmount > 0 ? `<div class="row" style="font-weight:700"><span>Kembalian</span><span>${formatIDR(changeAmount)}</span></div>` : ""}
-${customerPoints != null ? `<hr/><div class="row small" style="font-weight:700;"><span>Total Point Pelanggan</span><span>${esc(customerPoints)} Poin</span></div>` : ""}
+${customerPoints != null || pointsEarned > 0 ? `<hr/>` : ""}
+${customerPoints != null ? `<div class="row small" style="font-weight:700;"><span>Total Point Pelanggan</span><span>${esc(customerPoints)} Poin</span></div>` : ""}
 ${pointsEarned > 0 ? `<div class="row small muted"><span>Point Didapat</span><span>+${pointsEarned} Poin</span></div>` : ""}
 ${queueNo ? `<hr/><div class="queue-box"><div class="small">NO. ANTRIAN</div><div class="queue-num">${esc(queueNo)}</div></div>` : ""}
 ${footer ? `<hr/><div class="c small">${esc(footer)}</div>` : ""}
@@ -356,9 +357,11 @@ export function buildEscPosReceiptBinary({
     writePair("Kembalian", formatIDR(changeAmount));
   }
 
-  if (customerPoints != null) {
+  if (customerPoints != null || pointsEarned > 0) {
     encoder.line(lineStr);
-    writePair("Total Point", `${customerPoints} Poin`);
+    if (customerPoints != null) {
+      writePair("Total Point", `${customerPoints} Poin`);
+    }
     if (pointsEarned > 0) {
       writePair("Point Didapat", `+${pointsEarned} Poin`);
     }

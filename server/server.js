@@ -1594,8 +1594,9 @@ async function createPosTransaction(body, userId, conn) {
   const lineRows = [];
 
   for (const it of items) {
+    const isCustom = Boolean(it.is_custom || !it.product_id);
     // Custom item: no product_id, no stock check
-    if (it.is_custom) {
+    if (isCustom) {
       const qty = Number(it.qty) || 1;
       const sell = Number(it.sell_price || 0);
       const disc = Math.max(0, Number(it.discount_amount || 0));
@@ -1606,16 +1607,16 @@ async function createPosTransaction(body, userId, conn) {
       lineRows.push({
         product_id: null,
         variant_id: null,
-        product_name: it.name || "Item Custom",
+        product_name: it.name || it.product_name || "Item Custom",
         variant_name: null,
         barcode: null,
-        purchase_price: 0,
+        purchase_price: Number(it.purchase_price || 0),
         sell_price: sell,
         qty,
         discount_amount: disc,
         subtotal: lineSub,
         line_total: lineTotal,
-        margin_amount: lineTotal,
+        margin_amount: lineTotal - (Number(it.purchase_price || 0) * qty),
         stock_available: 999,
         is_custom: 1,
       });
@@ -1623,7 +1624,33 @@ async function createPosTransaction(body, userId, conn) {
     }
 
     const [pr] = await conn.query(`SELECT * FROM products WHERE id=? FOR UPDATE`, [it.product_id]);
-    if (!pr.length) throw new Error(`Produk ${it.product_id} tidak ada`);
+    if (!pr.length) {
+      // Gracefully handle product deleted from database without crashing
+      const qty = Number(it.qty) || 1;
+      const sell = Number(it.sell_price || 0);
+      const disc = Math.max(0, Number(it.discount_amount || 0));
+      const lineSub = sell * qty;
+      const lineTotal = lineSub - disc;
+      grossSubtotal += lineSub;
+      lineDiscountSum += disc;
+      lineRows.push({
+        product_id: null,
+        variant_id: null,
+        product_name: it.name || it.product_name || `Produk #${it.product_id}`,
+        variant_name: null,
+        barcode: it.barcode || null,
+        purchase_price: Number(it.purchase_price || 0),
+        sell_price: sell,
+        qty,
+        discount_amount: disc,
+        subtotal: lineSub,
+        line_total: lineTotal,
+        margin_amount: lineTotal - (Number(it.purchase_price || 0) * qty),
+        stock_available: 999,
+        is_custom: 1,
+      });
+      continue;
+    }
     const p = pr[0];
     const qty = Number(it.qty);
     const sell = Number(it.sell_price != null ? it.sell_price : p.sell_price);
@@ -1666,9 +1693,9 @@ async function createPosTransaction(body, userId, conn) {
 
   if (status === "completed") {
     for (const lr of lineRows) {
-      if (lr.is_custom) continue; // skip stock check for custom items
+      if (lr.is_custom || !lr.product_id) continue; // skip stock check for custom items
       const [pr] = await conn.query(`SELECT stock FROM products WHERE id=? FOR UPDATE`, [lr.product_id]);
-      if (pr[0].stock < lr.qty) throw new Error(`Stok tidak cukup: ${lr.product_name}`);
+      if (pr.length && pr[0].stock < lr.qty) throw new Error(`Stok tidak cukup: ${lr.product_name}`);
     }
   }
 
@@ -1869,12 +1896,14 @@ async function voidCompletedTransaction(conn, txId, row, voidUserId) {
 
   const [items] = await conn.query(`SELECT * FROM transaction_items WHERE transaction_id=?`, [txId]);
   for (const it of items) {
-    await conn.query(`UPDATE products SET stock = stock + ? WHERE id=?`, [it.qty, it.product_id]);
-    await conn.query(
-      `INSERT INTO stock_movements (product_id, type, qty, reference_type, reference_id, notes, created_by)
-       VALUES (?,'adjustment',?, 'void_tx', ?, ?, ?)`,
-      [it.product_id, it.qty, txId, `Hapus transaksi ${row.invoice_no}`, voidUserId]
-    );
+    if (it.product_id) {
+      await conn.query(`UPDATE products SET stock = stock + ? WHERE id=?`, [it.qty, it.product_id]);
+      await conn.query(
+        `INSERT INTO stock_movements (product_id, type, qty, reference_type, reference_id, notes, created_by)
+         VALUES (?,'adjustment',?, 'void_tx', ?, ?, ?)`,
+        [it.product_id, it.qty, txId, `Hapus transaksi ${row.invoice_no}`, voidUserId]
+      );
+    }
   }
 
   if (row.customer_id) {
@@ -1961,7 +1990,8 @@ app.get(
         " AND t.status='completed' AND COALESCE((SELECT SUM(r3.balance) FROM receivables r3 WHERE r3.transaction_id = t.id), 0) > 0.015";
     }
     const [rows] = await pool.query(
-      `SELECT SQL_CALC_FOUND_ROWS t.*, u.name AS cashier_name, c.name AS customer_name,
+      `SELECT SQL_CALC_FOUND_ROWS t.*, u.name AS cashier_name, c.name AS customer_name, c.total_points AS customer_total_points,
+              COALESCE((SELECT points FROM customer_points_log WHERE transaction_id = t.id AND type='earn' LIMIT 1), 0) AS points_earned,
               COALESCE((SELECT SUM(r.balance) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_balance
        FROM transactions t
        JOIN users u ON u.id=t.user_id
@@ -1983,6 +2013,7 @@ app.get(
   asyncHandler(async (req, res) => {
     const [tx] = await pool.query(
       `SELECT t.*, u.name AS cashier_name, c.name AS customer_name, c.whatsapp AS customer_wa, c.total_points AS customer_total_points,
+              COALESCE((SELECT points FROM customer_points_log WHERE transaction_id = t.id AND type='earn' LIMIT 1), 0) AS points_earned,
               COALESCE((SELECT SUM(r.amount) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_amount,
               COALESCE((SELECT SUM(r.paid_amount) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_paid_amount,
               COALESCE((SELECT SUM(r.balance) FROM receivables r WHERE r.transaction_id = t.id), 0) AS receivable_balance
@@ -2066,12 +2097,14 @@ app.post(
       if (tx[0].status !== "completed") throw new Error("Hanya transaksi selesai yang bisa refund");
       const [items] = await conn.query(`SELECT * FROM transaction_items WHERE transaction_id=?`, [req.params.id]);
       for (const it of items) {
-        await conn.query(`UPDATE products SET stock = stock + ? WHERE id=?`, [it.qty, it.product_id]);
-        await conn.query(
-          `INSERT INTO stock_movements (product_id, type, qty, reference_type, reference_id, notes, created_by)
-           VALUES (?,'refund',?, 'refund', ?, 'Refund trx', ?)`,
-          [it.product_id, it.qty, req.params.id, req.user.id]
-        );
+        if (it.product_id) {
+          await conn.query(`UPDATE products SET stock = stock + ? WHERE id=?`, [it.qty, it.product_id]);
+          await conn.query(
+            `INSERT INTO stock_movements (product_id, type, qty, reference_type, reference_id, notes, created_by)
+             VALUES (?,'refund',?, 'refund', ?, 'Refund trx', ?)`,
+            [it.product_id, it.qty, req.params.id, req.user.id]
+          );
+        }
       }
       await conn.query(`UPDATE transactions SET status='refunded' WHERE id=?`, [req.params.id]);
       await conn.commit();

@@ -6,7 +6,7 @@ import api from "../api/client";
 import { fetchAllPages } from "../api/fetchAllPages";
 import { PAGE_SIZE } from "../constants/pagination";
 import { formatDateID, formatDateTimeID, formatIDR, formatThousandsIdInput } from "../utils/format";
-import { buildEscPosReceiptBinary, buildThermalReceiptHtml, printViaWebBluetooth } from "../utils/receipt";
+import { buildEscPosReceiptBinary, buildThermalReceiptHtml, printViaWebBluetooth, printViaRawBTBase64 } from "../utils/receipt";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TableSkeleton } from "../components/Skeleton";
@@ -193,6 +193,7 @@ export default function TransactionsPage() {
         queueNo: `#${detail.id}`,
         customerName: detail.customer_name || "",
         customerPoints: detail.customer_total_points ?? null,
+        pointsEarned: Number(detail.points_earned || 0),
         dateStr: receiptDateStr(detail),
         lines,
         subtotal: Number(detail.subtotal),
@@ -249,6 +250,7 @@ export default function TransactionsPage() {
         queueNo: `#${fullTx.id}`,
         customerName: fullTx.customer_name || "",
         customerPoints: fullTx.customer_total_points ?? null,
+        pointsEarned: Number(fullTx.points_earned || 0),
         dateStr: receiptDateStr(fullTx),
         lines,
         subtotal: Number(fullTx.subtotal),
@@ -267,6 +269,55 @@ export default function TransactionsPage() {
     } catch (err) {
       toast.dismiss(t);
       toast.error(err.message || "Printer Bluetooth tidak merespons");
+    }
+  }
+
+  async function printRawBtReceipt(txData) {
+    const target = txData || detail;
+    if (!target) return;
+    try {
+      const { data: s } = await api.get("/api/settings");
+      let fullTx = target;
+      if (!target.items) {
+        const { data: fetched } = await api.get(`/api/transactions/${target.id}`, { skipToast: true });
+        fullTx = fetched;
+      }
+      const lines = (fullTx.items || []).map((it) => ({
+        name: it.product_name,
+        sell_price: Number(it.sell_price),
+        qty: Number(it.qty),
+        discount_amount: Number(it.discount_amount || 0),
+      }));
+      const payments = (fullTx.payments || []).map((p) => ({
+        method: PAY_LABEL[p.method] || p.method,
+        amount: Number(p.amount),
+      }));
+      const binary = buildEscPosReceiptBinary({
+        storeName: s.store_name || "Toko",
+        storeAddress: s.store_address || "",
+        storePhone: s.store_phone || "",
+        footer: s.receipt_footer || "",
+        invoiceNo: fullTx.invoice_no,
+        queueNo: `#${fullTx.id}`,
+        customerName: fullTx.customer_name || "",
+        customerPoints: fullTx.customer_total_points ?? null,
+        pointsEarned: Number(fullTx.points_earned || 0),
+        dateStr: receiptDateStr(fullTx),
+        lines,
+        subtotal: Number(fullTx.subtotal),
+        discountTotal: Number(fullTx.discount_total),
+        taxPercent: Number(fullTx.tax_percent),
+        taxAmount: Number(fullTx.tax_amount),
+        additionalFee: Number(fullTx.additional_fee || 0),
+        additionalFeeName: fullTx.additional_fee_name || "Biaya Tambahan",
+        grandTotal: Number(fullTx.grand_total),
+        changeAmount: Number(fullTx.change_amount),
+        payments,
+        widthMm: Number(s.thermal_width_mm) || 58,
+      });
+      printViaRawBTBase64(binary);
+    } catch (err) {
+      toast.error(err.message || "Gagal memproses struk RawBT");
     }
   }
 
@@ -649,7 +700,19 @@ export default function TransactionsPage() {
               <p>
                 <span className="text-slate-500">Pelanggan</span>
                 <br />
-                <span className="font-medium">{detail.customer_name || "—"}</span>
+                <span className="font-medium inline-flex items-center flex-wrap gap-1.5">
+                  {detail.customer_name || "—"}
+                  {detail.customer_total_points != null && (
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                      {detail.customer_total_points} Poin
+                    </span>
+                  )}
+                  {Number(detail.points_earned) > 0 && (
+                    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                      +{detail.points_earned} Poin didapat
+                    </span>
+                  )}
+                </span>
               </p>
             </div>
             <div className={PAGE_TABLE_WRAP}>
@@ -787,6 +850,15 @@ export default function TransactionsPage() {
               >
                 <Bluetooth className="h-4 w-4" />
                 Cetak Bluetooth
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-900 transition-colors"
+                title="Cetak cepat via aplikasi RawBT (Android/SPP)"
+                onClick={() => printRawBtReceipt(detail)}
+              >
+                <Printer className="h-4 w-4" />
+                RawBT
               </button>
               <button
                 type="button"
