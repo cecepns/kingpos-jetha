@@ -109,6 +109,13 @@ export default function PosPage() {
   const [cashAccounts, setCashAccounts] = useState([]);
   const [customerId, setCustomerId] = useState("");
   const [selectedCustomerOption, setSelectedCustomerOption] = useState(null);
+  const [newCustomerModalOpen, setNewCustomerModalOpen] = useState(false);
+  const [newCustName, setNewCustName] = useState("");
+  const [newCustPhone, setNewCustPhone] = useState("");
+  const [newCustAddress, setNewCustAddress] = useState("");
+  const [newCustCategory, setNewCustCategory] = useState("umum");
+  const [newCustNotes, setNewCustNotes] = useState("");
+  const [newCustSubmitting, setNewCustSubmitting] = useState(false);
   const [customItemOpen, setCustomItemOpen] = useState(false);
   const [customItemName, setCustomItemName] = useState("");
   const [customItemPrice, setCustomItemPrice] = useState("");
@@ -468,35 +475,68 @@ export default function PosPage() {
     }
   }, []);
 
-  const handleCreateCustomer = useCallback(async (inputValue) => {
+  const handleCreateCustomer = useCallback((inputValue) => {
     const trimmed = (inputValue || "").trim();
-    if (!trimmed) return;
-    const t = toast.loading(`Menambahkan pelanggan "${trimmed}"...`);
+    setNewCustName(trimmed);
+    setNewCustPhone("");
+    setNewCustAddress("");
+    setNewCustCategory("umum");
+    setNewCustNotes("");
+    setNewCustomerModalOpen(true);
+  }, []);
+
+  const handleSaveNewCustomerModal = async (e) => {
+    if (e) e.preventDefault();
+    const trimmedName = (newCustName || "").trim();
+    if (!trimmedName) {
+      toast.error("Nama pelanggan wajib diisi");
+      return;
+    }
+    setNewCustSubmitting(true);
+    const t = toast.loading(`Menyimpan pelanggan "${trimmedName}"...`);
     try {
       const { data } = await api.post(API_ENDPOINTS.CUSTOMERS.CREATE, {
-        name: trimmed,
-        category: "umum",
+        name: trimmedName,
+        whatsapp: newCustPhone.trim() || null,
+        address: newCustAddress.trim() || null,
+        category: newCustCategory || "umum",
+        notes: newCustNotes.trim() || null,
       });
       const newCustomer = {
         id: data.id,
-        name: trimmed,
+        name: trimmedName,
+        whatsapp: newCustPhone.trim() || null,
+        address: newCustAddress.trim() || null,
+        category: newCustCategory || "umum",
+        notes: newCustNotes.trim() || null,
         member_barcode: data.member_barcode,
         total_points: 0,
         total_visits: 0,
       };
       const newOption = {
         value: String(data.id),
-        label: trimmed,
+        label: `${trimmedName}${newCustPhone.trim() ? " (" + newCustPhone.trim() + ")" : ""}`,
         customer: newCustomer,
       };
       setCustomers((prev) => [newCustomer, ...prev]);
       setCustomerId(String(data.id));
       setSelectedCustomerOption(newOption);
-      toast.success(`Pelanggan "${trimmed}" berhasil ditambahkan`, { id: t });
+      if (newCustPhone.trim()) {
+        setReceiptWaPhone(newCustPhone.trim().replace(/\D/g, ""));
+      }
+      setNewCustomerModalOpen(false);
+      setNewCustName("");
+      setNewCustPhone("");
+      setNewCustAddress("");
+      setNewCustCategory("umum");
+      setNewCustNotes("");
+      toast.success(`Pelanggan "${trimmedName}" berhasil ditambahkan & dipilih`, { id: t });
     } catch (err) {
       toast.error(err.response?.data?.error || "Gagal menambahkan pelanggan", { id: t });
+    } finally {
+      setNewCustSubmitting(false);
     }
-  }, []);
+  };
 
   function updateLine(keyOrId, patch) {
     setCart((prevCart) =>
@@ -1832,9 +1872,27 @@ export default function PosPage() {
 
             {/* Pilih Pelanggan */}
             <div className="mt-3.5 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/60">
-              <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400">
-                <UserSearch className="h-3.5 w-3.5" /> Pelanggan
-              </label>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                  <UserSearch className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" /> Pelanggan
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewCustName("");
+                    setNewCustPhone("");
+                    setNewCustAddress("");
+                    setNewCustCategory("umum");
+                    setNewCustNotes("");
+                    setNewCustomerModalOpen(true);
+                  }}
+                  className="flex items-center gap-1 text-[11px] font-bold text-brand-600 hover:text-brand-700 hover:underline dark:text-brand-400 transition"
+                  title="Tambah Pelanggan Baru"
+                >
+                  <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                  <span>+ Tambah Pelanggan</span>
+                </button>
+              </div>
               <AsyncCreatableSelect
                 cacheOptions
                 defaultOptions
@@ -1853,8 +1911,25 @@ export default function PosPage() {
                 onCreateOption={handleCreateCustomer}
                 formatCreateLabel={(input) => `+ Tambah pelanggan baru: "${input}"`}
                 isClearable
-                placeholder="Ketik/cari pelanggan atau tambah baru..."
-                noOptionsMessage={() => "Ketik nama pelanggan baru & tekan Enter"}
+                placeholder="Cari atau ketik nama pelanggan..."
+                noOptionsMessage={({ inputValue }) => (
+                  <div className="p-2 text-center">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Pelanggan tidak ditemukan</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewCustName(inputValue || "");
+                        setNewCustPhone("");
+                        setNewCustAddress("");
+                        setNewCustomerModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700 shadow-sm transition"
+                    >
+                      <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                      <span>Tambah "{inputValue || "Pelanggan Baru"}"</span>
+                    </button>
+                  </div>
+                )}
                 loadingMessage={() => "Mencari..."}
                 styles={{
                   control: (base, state) => ({
@@ -2726,6 +2801,109 @@ export default function PosPage() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal Tambah Pelanggan Baru dari POS */}
+      <Modal
+        open={newCustomerModalOpen}
+        title="Tambah Pelanggan Baru"
+        onClose={() => setNewCustomerModalOpen(false)}
+      >
+        <form onSubmit={handleSaveNewCustomerModal} className="space-y-3.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Data pelanggan akan langsung disimpan ke sistem dan otomatis dipilih untuk transaksi saat ini.
+          </p>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Nama Pelanggan <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              autoFocus
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              placeholder="Contoh: Bpk. Rahmat, Ibu Siti, dll"
+              value={newCustName}
+              onChange={(e) => setNewCustName(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                No. WhatsApp / HP
+              </label>
+              <input
+                type="tel"
+                inputMode="numeric"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                placeholder="08123456789"
+                value={newCustPhone}
+                onChange={(e) => setNewCustPhone(e.target.value.replace(/[^\d+]/g, ""))}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Kategori
+              </label>
+              <select
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                value={newCustCategory}
+                onChange={(e) => setNewCustCategory(e.target.value)}
+              >
+                <option value="umum">Umum</option>
+                <option value="member">Member</option>
+                <option value="grosir">Grosir</option>
+                <option value="reseller">Reseller</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Alamat (Opsional)
+            </label>
+            <input
+              type="text"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              placeholder="Alamat pelanggan"
+              value={newCustAddress}
+              onChange={(e) => setNewCustAddress(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Catatan (Opsional)
+            </label>
+            <input
+              type="text"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              placeholder="Catatan tambahan"
+              value={newCustNotes}
+              onChange={(e) => setNewCustNotes(e.target.value)}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition"
+              onClick={() => setNewCustomerModalOpen(false)}
+              disabled={newCustSubmitting}
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={newCustSubmitting}
+              className="rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-700 shadow-md shadow-brand-600/20 transition disabled:opacity-60"
+            >
+              {newCustSubmitting ? "Menyimpan..." : "Simpan & Pilih"}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       {/* Landscape Orientation Warning Overlay on Mobile */}

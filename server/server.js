@@ -365,27 +365,52 @@ app.delete(
     if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: "ID tidak valid" });
     if (id === req.user.id) return res.status(400).json({ error: "Tidak dapat menghapus akun sendiri" });
 
-    const [[u]] = await pool.query(`SELECT id, role_id FROM users WHERE id=?`, [id]);
-    if (!u) return res.status(404).json({ error: "Pengguna tidak ditemukan" });
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
 
-    if (Number(u.role_id) === 1 && req.user.role_name !== "admin") {
-      return res.status(403).json({ error: "Hanya admin yang boleh menghapus akun admin" });
+      const [[u]] = await conn.query(`SELECT id, name, role_id FROM users WHERE id=?`, [id]);
+      if (!u) {
+        await conn.rollback();
+        return res.status(404).json({ error: "Pengguna tidak ditemukan" });
+      }
+
+      if (Number(u.role_id) === 1 && req.user.role_name !== "admin") {
+        await conn.rollback();
+        return res.status(403).json({ error: "Hanya admin yang boleh menghapus akun admin" });
+      }
+
+      if (Number(u.role_id) === 1) {
+        const [[{ c }]] = await conn.query(`SELECT COUNT(*) AS c FROM users WHERE role_id = 1`);
+        if (Number(c) <= 1) {
+          await conn.rollback();
+          return res.status(400).json({ error: "Tidak dapat menghapus admin terakhir" });
+        }
+      }
+
+      const [[{ tx }]] = await conn.query(`SELECT COUNT(*) AS tx FROM transactions WHERE user_id=?`, [id]);
+      if (Number(tx) > 0) {
+        await conn.rollback();
+        return res.status(409).json({
+          error: `Pengguna "${u.name}" memiliki riwayat transaksi (${tx} transaksi). Nonaktifkan akun (status: Nonaktif) jika tidak digunakan lagi agar riwayat transaksi tetap terjaga.`,
+        });
+      }
+
+      // Safely unlink references before deleting
+      await conn.query(`UPDATE cash_flows SET created_by=NULL WHERE created_by=?`, [id]);
+      await conn.query(`UPDATE stock_movements SET created_by=NULL WHERE created_by=?`, [id]);
+      await conn.query(`UPDATE customer_points_log SET created_by=NULL WHERE created_by=?`, [id]);
+      await conn.query(`UPDATE employees SET user_id=NULL WHERE user_id=?`, [id]);
+
+      await conn.query(`DELETE FROM users WHERE id=?`, [id]);
+      await conn.commit();
+      res.json({ ok: true, message: `Pengguna "${u.name}" berhasil dihapus` });
+    } catch (e) {
+      await conn.rollback();
+      res.status(400).json({ error: e.message || "Gagal menghapus pengguna" });
+    } finally {
+      conn.release();
     }
-
-    if (Number(u.role_id) === 1) {
-      const [[{ c }]] = await pool.query(`SELECT COUNT(*) AS c FROM users WHERE role_id = 1`);
-      if (Number(c) <= 1) return res.status(400).json({ error: "Tidak dapat menghapus admin terakhir" });
-    }
-
-    const [[{ tx }]] = await pool.query(`SELECT COUNT(*) AS tx FROM transactions WHERE user_id=?`, [id]);
-    if (Number(tx) > 0) {
-      return res.status(409).json({
-        error: "Pengguna punya riwayat transaksi. Nonaktifkan akun jika tidak perlu login lagi.",
-      });
-    }
-
-    await pool.query(`DELETE FROM users WHERE id=?`, [id]);
-    res.json({ ok: true });
   })
 );
 
@@ -1302,8 +1327,58 @@ app.delete(
   requireAuth,
   requireRoles("admin"),
   asyncHandler(async (req, res) => {
-    await pool.query(`DELETE FROM customers WHERE id=?`, [req.params.id]);
-    res.json({ ok: true });
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id < 1) {
+      return res.status(400).json({ error: "ID pelanggan tidak valid" });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [[c]] = await conn.query(`SELECT id, name FROM customers WHERE id=?`, [id]);
+      if (!c) {
+        await conn.rollback();
+        return res.status(404).json({ error: "Pelanggan tidak ditemukan" });
+      }
+
+      // Check if customer has active unpaid receivables
+      const [[recv]] = await conn.query(
+        `SELECT COUNT(*) AS count, COALESCE(SUM(balance), 0) AS total_balance FROM receivables WHERE customer_id=? AND balance > 0.01`,
+        [id]
+      );
+      if (recv && Number(recv.count) > 0 && Number(recv.total_balance) > 0.01) {
+        await conn.rollback();
+        return res.status(400).json({
+          error: `Pelanggan "${c.name}" tidak dapat dihapus karena masih memiliki sisa piutang aktif sebesar Rp ${Number(recv.total_balance).toLocaleString("id-ID")}. Lunasi piutang terlebih dahulu.`,
+        });
+      }
+
+      // 1. Delete points log
+      await conn.query(`DELETE FROM customer_points_log WHERE customer_id=?`, [id]);
+
+      // 2. Delete receivables (and installments)
+      const [recRows] = await conn.query(`SELECT id FROM receivables WHERE customer_id=?`, [id]);
+      if (recRows.length) {
+        const recIds = recRows.map((r) => r.id);
+        await conn.query(`DELETE FROM installments WHERE receivable_id IN (?)`, [recIds]);
+        await conn.query(`DELETE FROM receivables WHERE customer_id=?`, [id]);
+      }
+
+      // 3. Unlink transactions customer_id (preserve sales report history)
+      await conn.query(`UPDATE transactions SET customer_id=NULL WHERE customer_id=?`, [id]);
+
+      // 4. Delete customer
+      await conn.query(`DELETE FROM customers WHERE id=?`, [id]);
+
+      await conn.commit();
+      res.json({ ok: true, message: `Pelanggan "${c.name}" berhasil dihapus` });
+    } catch (e) {
+      await conn.rollback();
+      res.status(400).json({ error: e.message || "Gagal menghapus pelanggan" });
+    } finally {
+      conn.release();
+    }
   })
 );
 
