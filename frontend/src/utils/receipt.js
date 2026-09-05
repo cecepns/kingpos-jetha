@@ -82,9 +82,9 @@ export function buildThermalReceiptHtml({
   .queue-num{font-weight:900;font-size:16px;}
   hr{border:none;border-top:1px dashed #999;margin:6px 0;}
 </style></head><body><div class="wrap">
-<div class="c h">${esc(storeName)}</div>
-${storeAddress ? `<div class="c small">${esc(storeAddress)}</div>` : ""}
-${storePhone ? `<div class="c small">${esc(storePhone)}</div>` : ""}
+<div class="c h">${esc(String(storeName || "").trim())}</div>
+${storeAddress ? `<div class="c small">${esc(String(storeAddress || "").trim())}</div>` : ""}
+${storePhone ? `<div class="c small">${esc(String(storePhone || "").trim())}</div>` : ""}
 <hr/>
 ${customerName ? `<div class="row small"><span>Pelanggan</span><span style="font-weight:700;">${esc(customerName)}</span></div>` : ""}
 <div class="row small"><span>${esc(invoiceNo)}</span><span>${esc(dateStr)}</span></div>
@@ -179,6 +179,10 @@ export function buildReceiptPlainText({
   const lineStr = "-".repeat(widthChars);
   const doubleLine = "=".repeat(widthChars);
 
+  const cleanStoreName = String(storeName || "").trim();
+  const cleanStoreAddress = String(storeAddress || "").trim();
+  const cleanStorePhone = String(storePhone || "").trim();
+
   const padRightLeft = (left, right) => {
     const spaceNeeded = widthChars - left.length - right.length;
     if (spaceNeeded <= 0) return left.slice(0, Math.max(1, widthChars - right.length - 1)) + " " + right;
@@ -186,15 +190,17 @@ export function buildReceiptPlainText({
   };
 
   const centerText = (str) => {
-    if (str.length >= widthChars) return str;
-    const pad = Math.floor((widthChars - str.length) / 2);
-    return " ".repeat(pad) + str;
+    const s = String(str || "").trim();
+    if (!s) return "";
+    if (s.length >= widthChars) return s;
+    const pad = Math.floor((widthChars - s.length) / 2);
+    return " ".repeat(pad) + s;
   };
 
   let txt = "";
-  txt += centerText(storeName) + "\n";
-  if (storeAddress) txt += centerText(storeAddress) + "\n";
-  if (storePhone) txt += centerText(storePhone) + "\n";
+  if (cleanStoreName) txt += centerText(cleanStoreName) + "\n";
+  if (cleanStoreAddress) txt += centerText(cleanStoreAddress) + "\n";
+  if (cleanStorePhone) txt += centerText(cleanStorePhone) + "\n";
   txt += lineStr + "\n";
   if (customerName) {
     txt += padRightLeft("Pelanggan", customerName) + "\n";
@@ -285,10 +291,26 @@ export function buildEscPosReceiptBinary({
   const lineStr = "-".repeat(maxCols);
   const doubleLine = "=".repeat(maxCols);
 
-  encoder.initialize().codepage("cp437").align("center").bold(true).size("normal").line(storeName).bold(false);
+  const cleanStoreName = String(storeName || "").trim();
+  const cleanStoreAddress = String(storeAddress || "").trim();
+  const cleanStorePhone = String(storePhone || "").trim();
 
-  if (storeAddress) encoder.line(storeAddress);
-  if (storePhone) encoder.line(storePhone);
+  encoder
+    .initialize()
+    .codepage("cp437")
+    .size("normal");
+
+  if (cleanStoreName) {
+    encoder.align("center").bold(true).line(cleanStoreName).bold(false);
+  }
+  if (cleanStoreAddress) {
+    encoder.align("center").line(cleanStoreAddress);
+  }
+  if (cleanStorePhone) {
+    encoder.align("center").line(cleanStorePhone);
+  }
+
+  encoder.align("left");
   encoder.line(lineStr);
   if (customerName) {
     encoder.align("left").line(`Pelanggan: ${customerName}`);

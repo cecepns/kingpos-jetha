@@ -1,19 +1,31 @@
 {
-  "name": "POS Keuangan",
-  "short_name": "POS Keu",
-  "description": "POS & Analisis Keuangan — Retail Tanaman",
-  "theme_color": "#0f766e",
-  "background_color": "#f8fafc",
+  "name": "King POS",
+  "short_name": "KingPOS",
+  "description": "POS & Analisis Keuangan — King POS",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
   "display": "standalone",
   "orientation": "portrait",
   "start_url": "/",
   "scope": "/",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
