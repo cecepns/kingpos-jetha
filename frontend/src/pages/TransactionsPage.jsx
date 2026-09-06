@@ -191,9 +191,9 @@ export default function TransactionsPage() {
         widthMm,
         invoiceNo: detail.invoice_no,
         queueNo: `#${detail.id}`,
-        customerName: detail.customer_name || "",
-        customerPoints: detail.customer_total_points ?? null,
-        pointsEarned: Number(detail.points_earned || 0),
+        customerName: detail.customer_name || "Umum",
+        customerPoints: detail.customer_id ? (detail.customer_total_points ?? null) : null,
+        pointsEarned: detail.customer_id ? Number(detail.points_earned || 0) : 0,
         dateStr: receiptDateStr(detail),
         lines,
         subtotal: Number(detail.subtotal),
@@ -248,9 +248,9 @@ export default function TransactionsPage() {
         footer: s.receipt_footer || "",
         invoiceNo: fullTx.invoice_no,
         queueNo: `#${fullTx.id}`,
-        customerName: fullTx.customer_name || "",
-        customerPoints: fullTx.customer_total_points ?? null,
-        pointsEarned: Number(fullTx.points_earned || 0),
+        customerName: fullTx.customer_name || "Umum",
+        customerPoints: fullTx.customer_id ? (fullTx.customer_total_points ?? null) : null,
+        pointsEarned: fullTx.customer_id ? Number(fullTx.points_earned || 0) : 0,
         dateStr: receiptDateStr(fullTx),
         lines,
         subtotal: Number(fullTx.subtotal),
@@ -299,9 +299,9 @@ export default function TransactionsPage() {
         footer: s.receipt_footer || "",
         invoiceNo: fullTx.invoice_no,
         queueNo: `#${fullTx.id}`,
-        customerName: fullTx.customer_name || "",
-        customerPoints: fullTx.customer_total_points ?? null,
-        pointsEarned: Number(fullTx.points_earned || 0),
+        customerName: fullTx.customer_name || "Umum",
+        customerPoints: fullTx.customer_id ? (fullTx.customer_total_points ?? null) : null,
+        pointsEarned: fullTx.customer_id ? Number(fullTx.points_earned || 0) : 0,
         dateStr: receiptDateStr(fullTx),
         lines,
         subtotal: Number(fullTx.subtotal),
@@ -534,7 +534,7 @@ export default function TransactionsPage() {
                   <td className="px-4 py-3 font-mono text-xs">{x.invoice_no}</td>
                   <td className="px-4 py-3">{displayTxDate(x)}</td>
                   <td className="px-4 py-3">{x.cashier_name || "—"}</td>
-                  <td className="px-4 py-3">{x.customer_name || "—"}</td>
+                  <td className="px-4 py-3">{x.customer_name || "Umum"}</td>
                   <td className="px-4 py-3 text-right">{formatIDR(x.grand_total)}</td>
                   <td className="px-4 py-3">
                     {x.status === "completed" && hasOutstandingReceivable(x) ? (
@@ -701,13 +701,13 @@ export default function TransactionsPage() {
                 <span className="text-slate-500">Pelanggan</span>
                 <br />
                 <span className="font-medium inline-flex items-center flex-wrap gap-1.5">
-                  {detail.customer_name || "—"}
-                  {detail.customer_total_points != null && (
+                  {detail.customer_name || "Umum"}
+                  {detail.customer_id && detail.customer_total_points != null && (
                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                       {detail.customer_total_points} Poin
                     </span>
                   )}
-                  {Number(detail.points_earned) > 0 && (
+                  {detail.customer_id && Number(detail.points_earned) > 0 && (
                     <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                       +{detail.points_earned} Poin didapat
                     </span>

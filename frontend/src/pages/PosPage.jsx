@@ -312,9 +312,13 @@ export default function PosPage() {
   }, [custQ]);
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!customerId) {
+      setReceiptWaPhone("");
+      return;
+    }
     const c = customers.find((x) => String(x.id) === String(customerId));
     if (c?.whatsapp) setReceiptWaPhone(String(c.whatsapp).replace(/\D/g, ""));
+    else setReceiptWaPhone("");
   }, [customerId, customers]);
 
   function calculateUnitPrice(productOrCartItem, qty) {
@@ -763,6 +767,10 @@ export default function PosPage() {
               total_points: data.customer_total_points,
             },
           });
+        } else {
+          setCustomerId("");
+          setSelectedCustomerOption(null);
+          setReceiptWaPhone("");
         }
         setNotes(data.notes || "");
         setDiscountTotal(Number(data.discount_total || 0));
@@ -915,12 +923,12 @@ export default function PosPage() {
         const changeAmt = Math.max(0, paidSum - grandTotal);
         const queueNo = data.id ? `#${data.id}` : `#${data.invoice_no || "1"}`;
         const custObj = selectedCustomerOption?.customer || customers.find((c) => String(c.id) === String(customerId)) || null;
-        const custName = custObj?.name || "";
+        const custName = custObj?.name || "Umum";
         const totalPointsNow =
-          data.customer_total_points != null
-            ? data.customer_total_points
-            : custObj
-            ? Number(custObj.total_points || 0) + Number(data.points_earned || 0)
+          custObj
+            ? (data.customer_total_points != null
+                ? data.customer_total_points
+                : Number(custObj.total_points || 0) + Number(data.points_earned || 0))
             : null;
 
         setCompletedTx({
@@ -942,8 +950,8 @@ export default function PosPage() {
           customer: custObj ? { ...custObj, total_points: totalPointsNow } : null,
           customer_name: custName,
           customer_total_points: totalPointsNow,
-          receiptWaPhone,
-          points_earned: data.points_earned || 0,
+          receiptWaPhone: custObj ? receiptWaPhone : "",
+          points_earned: custObj ? (data.points_earned || 0) : 0,
         });
         setSuccessModalOpen(true);
       }
@@ -956,13 +964,15 @@ export default function PosPage() {
       setTransferAmtStr("");
       setQrisAmtStr("");
       setCashAmtStr("");
+      setCustomerId("");
+      setSelectedCustomerOption(null);
+      setReceiptWaPhone("");
+      setAdditionalFee(0);
+      setAdditionalFeeName("Ongkos Kirim");
+      setTaxPercent(0);
+      setSaleDate(new Date().toISOString().slice(0, 10));
       fetchProductPage(1, false).catch(() => { });
       setProductPage(1);
-      if (status === "draft" || status === "hold") {
-        setCustomerId("");
-        setSelectedCustomerOption(null);
-        setSaleDate(new Date().toISOString().slice(0, 10));
-      }
     } catch {
       toast.dismiss(t);
     }
@@ -989,9 +999,9 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       invoiceNo: tx.invoice_no,
       queueNo: tx.queue_no,
-      customerName: tx.customer?.name || tx.customer_name || "",
-      customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
-      pointsEarned: tx.points_earned || 0,
+      customerName: tx.customer?.name || tx.customer_name || "Umum",
+      customerPoints: tx.customer ? (tx.customer_total_points ?? tx.customer?.total_points ?? null) : null,
+      pointsEarned: tx.customer ? (tx.points_earned || 0) : 0,
       dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
@@ -1024,9 +1034,9 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       invoiceNo: tx.invoice_no,
       queueNo: tx.queue_no,
-      customerName: tx.customer?.name || tx.customer_name || "",
-      customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
-      pointsEarned: tx.points_earned || 0,
+      customerName: tx.customer?.name || tx.customer_name || "Umum",
+      customerPoints: tx.customer ? (tx.customer_total_points ?? tx.customer?.total_points ?? null) : null,
+      pointsEarned: tx.customer ? (tx.points_earned || 0) : 0,
       dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
@@ -1055,9 +1065,9 @@ export default function PosPage() {
       widthMm: Number(receiptCfg.thermal_width_mm) || 80,
       invoiceNo: tx.invoice_no,
       queueNo: tx.queue_no,
-      customerName: tx.customer?.name || tx.customer_name || "",
-      customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
-      pointsEarned: tx.points_earned || 0,
+      customerName: tx.customer?.name || tx.customer_name || "Umum",
+      customerPoints: tx.customer ? (tx.customer_total_points ?? tx.customer?.total_points ?? null) : null,
+      pointsEarned: tx.customer ? (tx.points_earned || 0) : 0,
       dateStr: getTxReceiptDateStr(tx),
       lines: tx.lines || [],
       subtotal: tx.subtotal || 0,
@@ -1114,9 +1124,9 @@ export default function PosPage() {
         storeName: receiptCfg.store_name,
         invoiceNo: tx.invoice_no,
         queueNo: tx.queue_no,
-        customerName: tx.customer?.name || tx.customer_name || "",
-        customerPoints: tx.customer_total_points ?? tx.customer?.total_points ?? null,
-        pointsEarned: tx.points_earned || 0,
+        customerName: tx.customer?.name || tx.customer_name || "Umum",
+        customerPoints: tx.customer ? (tx.customer_total_points ?? tx.customer?.total_points ?? null) : null,
+        pointsEarned: tx.customer ? (tx.points_earned || 0) : 0,
         dateStr: getTxReceiptDateStr(tx),
         lines: tx.lines || [],
         subtotal: tx.subtotal || 0,
@@ -1146,8 +1156,8 @@ export default function PosPage() {
       footer: receiptCfg.receipt_footer,
       widthMm: Number(receiptCfg.thermal_width_mm) || 80,
       invoiceNo: "Preview keranjang",
-      customerName: selectedCustomerOption?.customer?.name || "",
-      customerPoints: selectedCustomerOption?.customer?.total_points ?? null,
+      customerName: selectedCustomerOption?.customer?.name || "Umum",
+      customerPoints: selectedCustomerOption?.customer ? (selectedCustomerOption.customer.total_points ?? null) : null,
       dateStr: saleDate || new Date().toLocaleDateString("id-ID"),
       lines: cart,
       subtotal,
@@ -1178,8 +1188,9 @@ export default function PosPage() {
       buildReceiptWhatsAppText({
         storeName: receiptCfg.store_name,
         invoiceNo,
-        customerName: selectedCustomerOption?.customer?.name || "",
-        customerPoints: selectedCustomerOption?.customer?.total_points ?? null,
+        customerName: selectedCustomerOption?.customer?.name || "Umum",
+        customerPoints: selectedCustomerOption?.customer ? (selectedCustomerOption.customer.total_points ?? null) : null,
+        pointsEarned: 0,
         dateStr: saleDate,
         lines: cart,
         subtotal,
@@ -2672,7 +2683,7 @@ export default function PosPage() {
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Kembalian</span>
                 <span className="text-base font-black text-emerald-700 dark:text-emerald-300">{formatIDR(completedTx.change_amount)}</span>
               </div>
-              {(completedTx.customer_total_points != null || completedTx.customer?.total_points != null || completedTx.points_earned > 0) && (
+              {(completedTx.customer && (completedTx.customer_total_points != null || completedTx.customer?.total_points != null || completedTx.points_earned > 0)) && (
                 <div className="mt-2 rounded-xl bg-amber-200/60 dark:bg-amber-950/50 p-3 space-y-1.5 border border-amber-300/40 dark:border-amber-900/40">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
